@@ -17,7 +17,7 @@ import slick.jdbc.JdbcBackend
  */
 object Implicits {
 
-  // Convert to slick session.
+  // TODO Convert to slick session.
   implicit def request2Session(implicit request: HttpServletRequest): JdbcBackend#Session = Database.getSession(request)
 
   implicit def context2ApiJsonFormatContext(implicit context: Context): JsonFormat.Context = JsonFormat.Context(context.baseUrl)

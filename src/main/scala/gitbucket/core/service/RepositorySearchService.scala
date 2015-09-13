@@ -10,24 +10,27 @@ import org.eclipse.jgit.treewalk.TreeWalk
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.api.Git
 import gitbucket.core.model.Profile._
-import profile.simple._
+import profile.api._
 
 trait RepositorySearchService { self: IssuesService =>
   import RepositorySearchService._
 
-  def countIssues(owner: String, repository: String, query: String)(implicit session: Session): Int =
-    searchIssuesByKeyword(owner, repository, query).length
+  def countIssues(owner: String, repository: String, query: String): DBIO[Int] =
+    searchIssuesByKeyword(owner, repository, query).map(_.length)
 
-  def searchIssues(owner: String, repository: String, query: String)(implicit session: Session): List[IssueSearchResult] =
-    searchIssuesByKeyword(owner, repository, query).map { case (issue, commentCount, content) =>
-      IssueSearchResult(
-        issue.issueId,
-        issue.isPullRequest,
-        issue.title,
-        issue.openedUserName,
-        issue.registeredDate,
-        commentCount,
-        getHighlightText(content, query)._1)
+  def searchIssues(owner: String, repository: String, query: String): DBIO[Seq[IssueSearchResult]] =
+    searchIssuesByKeyword(owner, repository, query).map {
+      _.map { case (issue, commentCount, content) =>
+        IssueSearchResult(
+          issue.issueId,
+          issue.isPullRequest,
+          issue.title,
+          issue.openedUserName,
+          issue.registeredDate,
+          commentCount,
+          getHighlightText(content, query)._1
+        )
+      }
     }
 
   def countFiles(owner: String, repository: String, query: String): Int =
