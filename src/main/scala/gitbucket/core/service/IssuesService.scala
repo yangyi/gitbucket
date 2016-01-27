@@ -23,9 +23,9 @@ trait IssuesService {
   def getCommentsForApi(owner: String, repository: String, issueId: Int): DBIO[Seq[(IssueComment, Account, Issue)]] =
     IssueComments.filter(_.byIssue(owner, repository, issueId))
     .filter(_.action inSetBind Set("comment" , "close_comment", "reopen_comment"))
-    .join(Accounts).on( (t1, t2) => t1.commentedUserName === t2.userName )
-    .join(Issues).on( ((t1, t2), t3) => t3.byIssue(t1.userName, t1.repositoryName, t1.issueId) )
-    .map{ case ((t1, t2), t3) => (t1, t2, t3) }
+    .join(Accounts).on { case (t1, t2) => t1.commentedUserName === t2.userName }
+    .join(Issues).on { case ((t1, t2), t3) => t3.byIssue(t1.userName, t1.repositoryName, t1.issueId) }
+    .map { case ((t1, t2), t3) => (t1, t2, t3) }
     .result
 
   def getComment(owner: String, repository: String, commentId: String): DBIO[Option[IssueComment]] =
@@ -88,9 +88,9 @@ trait IssuesService {
 
   // TODO 後で修正する
   def getCommitStatues(issueList:Seq[(String, String, Int)]):Map[(String, String, Int), CommitStatusInfo] ={
-    if(issueList.isEmpty){
+//    if(issueList.isEmpty){
       Map.empty
-    } else {
+//    } else {
 //       import scala.slick.jdbc._
 //       val issueIdQuery = issueList.map(i => "(PR.USER_NAME=? AND PR.REPOSITORY_NAME=? AND PR.ISSUE_ID=?)").mkString(" OR ")
 //       implicit val qset = SetParameter[Seq[(String, String, Int)]] {
@@ -125,7 +125,7 @@ trait IssuesService {
 //         case(userName, repositoryName, issueId, count, successCount, context, state, targetUrl, description) =>
 //           (userName, repositoryName, issueId) -> CommitStatusInfo(count, successCount, context, state, targetUrl, description)
 //         }.toMap
-    }
+//    }
   }
 
   /**
