@@ -12,6 +12,9 @@ trait LabelsService {
   def getLabel(owner: String, repository: String, labelId: Int): DBIO[Option[Label]] =
     Labels.filter(_.byPrimaryKey(owner, repository, labelId)).result.headOption
 
+  def getLabel(owner: String, repository: String, labelName: String): DBIO[Option[Label]] =
+    Labels.filter(_.byLabel(owner, repository, labelName)).result.headOption
+
   def createLabel(owner: String, repository: String, labelName: String, color: String): DBIO[Int] =
     Labels returning Labels.map(_.labelId) += Label(
       userName       = owner,

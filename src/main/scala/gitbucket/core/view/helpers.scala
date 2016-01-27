@@ -5,7 +5,7 @@ import java.util.{Date, Locale, TimeZone}
 
 import gitbucket.core.controller.Context
 import gitbucket.core.model.CommitState
-import gitbucket.core.plugin.{RenderRequest, PluginRegistry, Renderer}
+import gitbucket.core.plugin.{RenderRequest, PluginRegistry}
 import gitbucket.core.service.{RepositoryService, RequestCache}
 import gitbucket.core.util.{FileUtil, JGitUtil, StringUtil}
 
@@ -84,15 +84,31 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   /**
    * Converts Markdown of Wiki pages to HTML.
    */
-  def markdown(value: String,
+  def markdown(markdown: String,
                repository: RepositoryService.RepositoryInfo,
                enableWikiLink: Boolean,
                enableRefsLink: Boolean,
+               enableLineBreaks: Boolean,
+               enableAnchor: Boolean = true,
                enableTaskList: Boolean = false,
                hasWritePermission: Boolean = false,
                pages: List[String] = Nil)(implicit context: Context): Html =
-    Html(Markdown.toHtml(value, repository, enableWikiLink, enableRefsLink, enableTaskList, true, hasWritePermission, pages))
+    Html(Markdown.toHtml(
+      markdown           = markdown,
+      repository         = repository,
+      enableWikiLink     = enableWikiLink,
+      enableRefsLink     = enableRefsLink,
+      enableAnchor       = enableAnchor,
+      enableLineBreaks   = enableLineBreaks,
+      enableTaskList     = enableTaskList,
+      hasWritePermission = hasWritePermission,
+      pages              = pages
+    ))
 
+  /**
+   * Render the given source (only markdown is supported in default) as HTML.
+   * You can test if a file is renderable in this method by [[isRenderable()]].
+   */
   def renderMarkup(filePath: List[String], fileContent: String, branch: String,
                    repository: RepositoryService.RepositoryInfo,
                    enableWikiLink: Boolean, enableRefsLink: Boolean, enableAnchor: Boolean)(implicit context: Context): Html = {
@@ -103,8 +119,18 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
     renderer.render(RenderRequest(filePath, fileContent, branch, repository, enableWikiLink, enableRefsLink, enableAnchor, context))
   }
 
+  /**
+   * Tests whether the given file is renderable. It's tested by the file extension.
+   */
   def isRenderable(fileName: String): Boolean = {
     PluginRegistry().renderableExtensions.exists(extension => fileName.toLowerCase.endsWith("." + extension))
+  }
+
+  /**
+   * Creates a link to the issue or the pull request from the issue id.
+   */
+  def issueLink(repository: RepositoryService.RepositoryInfo, issueId: Int)(implicit context: Context): Html = {
+    Html(createIssueLink(repository, issueId))
   }
 
   /**
@@ -263,10 +289,10 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
   }
 
   def commitStateIcon(state: CommitState) = Html(state match {
-    case CommitState.PENDING => "●"
-    case CommitState.SUCCESS => "&#x2714;"
-    case CommitState.ERROR   => "×"
-    case CommitState.FAILURE => "×"
+    case CommitState.PENDING => """<i style="color:inherit;width:inherit;height:inherit" class="octicon octicon-primitive-dot"></i>"""
+    case CommitState.SUCCESS => """<i style="color:inherit;width:inherit;height:inherit" class="octicon octicon-check"></i>"""
+    case CommitState.ERROR   => """<i style="color:inherit;width:inherit;height:inherit" class="octicon octicon-x"></i>"""
+    case CommitState.FAILURE => """<i style="color:inherit;width:inherit;height:inherit" class="octicon octicon-x"></i>"""
   })
 
   def commitStateText(state: CommitState, commitId:String) = state match {
@@ -274,5 +300,12 @@ object helpers extends AvatarImageProvider with LinkConverter with RequestCache 
     case CommitState.SUCCESS => "All is well"
     case CommitState.ERROR   => "Failed"
     case CommitState.FAILURE => "Failed"
+  }
+
+  // This pattern comes from: http://stackoverflow.com/a/4390768/1771641 (extract-url-from-string)
+  private[this] val detectAndRenderLinksRegex = """(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,13}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:'".,<>?«»“”‘’]))""".r
+
+  def detectAndRenderLinks(text: String): Html = {
+    Html(detectAndRenderLinksRegex.replaceAllIn(text, m => s"""<a href="${m.group(0)}">${m.group(0)}</a>"""))
   }
 }

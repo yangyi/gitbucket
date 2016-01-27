@@ -37,7 +37,7 @@ trait Notifier extends RepositoryService with AccountService with IssuesService 
 object Notifier {
   // TODO We want to be able to switch to mock.
   def apply(): Notifier = new SystemSettingsService {}.loadSystemSettings match {
-    case settings if settings.notification => new Mailer(settings.smtp.get)
+    case settings if (settings.notification && settings.useSMTP) => new Mailer(settings.smtp.get)
     case _ => new MockMailer
   }
 
@@ -75,7 +75,14 @@ class Mailer(private val smtp: Smtp) extends Notifier {
       database withSession { implicit session =>
         defining(
           s"[${r.name}] ${issue.title} (#${issue.issueId})" ->
-            msg(Markdown.toHtml(content, r, false, true, false))) { case (subject, msg) =>
+            msg(Markdown.toHtml(
+              markdown         = content,
+              repository       = r,
+              enableWikiLink   = false,
+              enableRefsLink   = true,
+              enableAnchor     = false,
+              enableLineBreaks = false
+            ))) { case (subject, msg) =>
             recipients(issue) { to =>
               val email = new HtmlEmail
               email.setHostName(smtp.host)
@@ -87,7 +94,7 @@ class Mailer(private val smtp: Smtp) extends Notifier {
                 email.setSSLOnConnect(ssl)
               }
               smtp.fromAddress
-                .map (_ -> smtp.fromName.orNull)
+                .map (_ -> smtp.fromName.getOrElse(context.loginAccount.get.userName))
                 .orElse (Some("notifications@gitbucket.com" -> context.loginAccount.get.userName))
                 .foreach { case (address, name) =>
                   email.setFrom(address, name)

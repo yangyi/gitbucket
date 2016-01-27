@@ -20,10 +20,12 @@ trait IssuesService {
     IssueComments filter (_.byIssue(owner, repository, issueId)) result
 
   /** @return IssueComment and commentedUser */
-  def getCommentsForApi(owner: String, repository: String, issueId: Int): DBIO[Seq[(IssueComment, Account)]] =
+  def getCommentsForApi(owner: String, repository: String, issueId: Int): DBIO[Seq[(IssueComment, Account, Issue)]] =
     IssueComments.filter(_.byIssue(owner, repository, issueId))
     .filter(_.action inSetBind Set("comment" , "close_comment", "reopen_comment"))
     .join(Accounts).on( (t1, t2) => t1.commentedUserName === t2.userName )
+    .join(Issues).on( ((t1, t2), t3) => t3.byIssue(t1.userName, t1.repositoryName, t1.issueId) )
+    .map{ case ((t1, t2), t3) => (t1, t2, t3) }
     .result
 
   def getComment(owner: String, repository: String, commentId: String): DBIO[Option[IssueComment]] =
@@ -88,65 +90,41 @@ trait IssuesService {
   def getCommitStatues(issueList:Seq[(String, String, Int)]):Map[(String, String, Int), CommitStatusInfo] ={
     if(issueList.isEmpty){
       Map.empty
-    }else{
-//      PullRequests
-//        .join(CommitStatuses).on { (t1, t2) =>
-//          t1.byRepository(t2.userName, t2.repositoryName) && t1.commitIdTo === t2.commitId
-//        }
-//        .filter { case (t1, _) =>
-//          issueList
-//            .map ( x => t1.byIssue(x._1, x._2, x._3) )
-//            .reduce ( _ || _ )
-//        }
-//        .groupBy { case (t1, _) =>
-//          (t1.userName, t1.repositoryName, t1.issueId)
-//        }
-//        .map { case ((userName, repositoryName, issueId), t) =>
-//          (userName,
-//           repositoryName,
-//           issueId,
-//           t.map(_._2.state).length,
-//           t.filter(_._2.state === (CommitState.SUCCESS: CommitState)).map(_._2.state).sum
-//          )
-//        }
-//        .filter { case (_, _, _, stateCount, _) =>
-//          stateCount === 1
-//        }
-
-
-//      val issueIdQuery = issueList.map(i => "(PR.USER_NAME=? AND PR.REPOSITORY_NAME=? AND PR.ISSUE_ID=?)").mkString(" OR ")
-//      implicit val qset = SetParameter[Seq[(String, String, Int)]] {
-//        case (seq, pp) =>
-//          for (a <- seq) {
-//            pp.setString(a._1)
-//            pp.setString(a._2)
-//            pp.setInt(a._3)
-//          }
-//      }
-//      import gitbucket.core.model.Profile.commitStateColumnType
-//      val query = Q.query[Seq[(String, String, Int)], (String, String, Int, Int, Int, Option[String], Option[CommitState], Option[String], Option[String])](s"""
-//        SELECT SUMM.USER_NAME, SUMM.REPOSITORY_NAME, SUMM.ISSUE_ID, CS_ALL, CS_SUCCESS
-//             , CSD.CONTEXT, CSD.STATE, CSD.TARGET_URL, CSD.DESCRIPTION
-//        FROM (SELECT
-//           PR.USER_NAME
-//         , PR.REPOSITORY_NAME
-//         , PR.ISSUE_ID
-//         , COUNT(CS.STATE) AS CS_ALL
-//         , SUM(CS.STATE='success') AS CS_SUCCESS
-//         , PR.COMMIT_ID_TO AS COMMIT_ID
-//          FROM PULL_REQUEST PR
-//          JOIN COMMIT_STATUS CS
-//            ON PR.USER_NAME=CS.USER_NAME
-//           AND PR.REPOSITORY_NAME=CS.REPOSITORY_NAME
-//           AND PR.COMMIT_ID_TO=CS.COMMIT_ID
-//         WHERE $issueIdQuery
-//         GROUP BY PR.USER_NAME, PR.REPOSITORY_NAME, PR.ISSUE_ID) as SUMM
-//        LEFT OUTER JOIN COMMIT_STATUS CSD
-//          ON SUMM.CS_ALL = 1 AND SUMM.COMMIT_ID = CSD.COMMIT_ID""");
-//      query(issueList).list.map{
-//        case(userName, repositoryName, issueId, count, successCount, context, state, targetUrl, description) =>
-//          (userName, repositoryName, issueId) -> CommitStatusInfo(count, successCount, context, state, targetUrl, description)
-//        }.toMap
+    } else {
+//       import scala.slick.jdbc._
+//       val issueIdQuery = issueList.map(i => "(PR.USER_NAME=? AND PR.REPOSITORY_NAME=? AND PR.ISSUE_ID=?)").mkString(" OR ")
+//       implicit val qset = SetParameter[Seq[(String, String, Int)]] {
+//         case (seq, pp) =>
+//           for (a <- seq) {
+//             pp.setString(a._1)
+//             pp.setString(a._2)
+//             pp.setInt(a._3)
+//           }
+//       }
+//       import gitbucket.core.model.Profile.commitStateColumnType
+//       val query = Q.query[Seq[(String, String, Int)], (String, String, Int, Int, Int, Option[String], Option[CommitState], Option[String], Option[String])](s"""
+//         SELECT SUMM.USER_NAME, SUMM.REPOSITORY_NAME, SUMM.ISSUE_ID, CS_ALL, CS_SUCCESS
+//              , CSD.CONTEXT, CSD.STATE, CSD.TARGET_URL, CSD.DESCRIPTION
+//         FROM (SELECT
+//            PR.USER_NAME
+//          , PR.REPOSITORY_NAME
+//          , PR.ISSUE_ID
+//          , COUNT(CS.STATE) AS CS_ALL
+//          , SUM(CS.STATE='success') AS CS_SUCCESS
+//          , PR.COMMIT_ID_TO AS COMMIT_ID
+//           FROM PULL_REQUEST PR
+//           JOIN COMMIT_STATUS CS
+//             ON PR.USER_NAME=CS.USER_NAME
+//            AND PR.REPOSITORY_NAME=CS.REPOSITORY_NAME
+//            AND PR.COMMIT_ID_TO=CS.COMMIT_ID
+//          WHERE $issueIdQuery
+//          GROUP BY PR.USER_NAME, PR.REPOSITORY_NAME, PR.ISSUE_ID) as SUMM
+//         LEFT OUTER JOIN COMMIT_STATUS CSD
+//           ON SUMM.CS_ALL = 1 AND SUMM.COMMIT_ID = CSD.COMMIT_ID""");
+//       query(issueList).list.map{
+//         case(userName, repositoryName, issueId, count, successCount, context, state, targetUrl, description) =>
+//           (userName, repositoryName, issueId) -> CommitStatusInfo(count, successCount, context, state, targetUrl, description)
+//         }.toMap
     }
   }
 
@@ -501,9 +479,11 @@ object IssuesService {
      * Restores IssueSearchCondition instance from filter query.
      */
     def apply(filter: String, milestones: Map[String, Int]): IssueSearchCondition = {
-      val conditions = filter.split("[ 　\t]+").map { x =>
-        val dim = x.split(":")
-        dim(0) -> dim(1)
+      val conditions = filter.split("[ 　\t]+").flatMap { x =>
+        x.split(":") match {
+           case Array(key, value) => Some((key, value))
+           case _ => None
+        }
       }.groupBy(_._1).map { case (key, values) =>
         key -> values.map(_._2).toSeq
       }

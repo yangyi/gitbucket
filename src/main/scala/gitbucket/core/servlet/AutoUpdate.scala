@@ -18,9 +18,24 @@ import gitbucket.core.util.Directory
 object AutoUpdate {
 
   /**
-   * The history of versions. A head of this sequence is the current BitBucket version.
+   * The history of versions. A head of this sequence is the current GitBucket version.
    */
   val versions = Seq(
+    new Version(3, 11),
+    new Version(3, 10),
+    new Version(3, 9),
+    new Version(3, 8),
+    new Version(3, 7) with SystemSettingsService {
+      override def update(conn: Connection, cl: ClassLoader): Unit = {
+        super.update(conn, cl)
+        val settings = loadSystemSettings()
+        if(settings.notification){
+          saveSystemSettings(settings.copy(useSMTP = true))
+        }
+      }
+    },
+    new Version(3, 6),
+    new Version(3, 5),
     new Version(3, 4),
     new Version(3, 3),
     new Version(3, 2),
@@ -141,7 +156,7 @@ object AutoUpdate {
   )
 
   /**
-   * The head version of BitBucket.
+   * The head version of GitBucket.
    */
   val headVersion = versions.head
 

@@ -40,6 +40,9 @@ trait CommitStatusService {
   def getCommitStatues(userName: String, repositoryName: String, sha: String): DBIO[Seq[CommitStatus]] =
     byCommitStatues(userName, repositoryName, sha).result
 
+  def getRecentStatuesContexts(userName: String, repositoryName: String, time: java.util.Date): DBIO[Seq[String]] =
+    CommitStatuses.filter(t => t.byRepository(userName, repositoryName)).filter(t => t.updatedDate > time.bind).groupBy(_.context).map(_._1).result
+
   def getCommitStatuesWithCreator(userName: String, repositoryName: String, sha: String): DBIO[Seq[(CommitStatus, Account)]] =
     byCommitStatues(userName, repositoryName, sha).join(Accounts)
       .filter{ case (t,a) => t.creator === a.userName }.result

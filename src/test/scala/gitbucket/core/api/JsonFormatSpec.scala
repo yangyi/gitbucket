@@ -7,7 +7,7 @@ import org.json4s.jackson.JsonMethods.{pretty, parse}
 import org.json4s._
 import org.specs2.matcher._
 
-import java.util.{Calendar, TimeZone}
+import java.util.{Calendar, TimeZone, Date}
 
 
 
@@ -16,6 +16,11 @@ class JsonFormatSpec extends Specification {
     val d = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
     d.set(2011,3,14,16,0,49)
     d.getTime
+  }
+  def date(date:String): Date = {
+    val f = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+    f.setTimeZone(TimeZone.getTimeZone("UTC"))
+    f.parse(date)
   }
   val sha1 = "6dcb09b5b57875f334f61aebed695e2e4193db5e"
   val repo1Name = RepositoryName("octocat/Hello-World")
@@ -45,7 +50,7 @@ class JsonFormatSpec extends Specification {
     forks = 0,
     `private` = false,
     default_branch = "master",
-    owner = apiUser)
+    owner = apiUser)(urlIsHtmlUrl = false)
   val repositoryJson = s"""{
     "name" : "Hello-World",
     "full_name" : "octocat/Hello-World",
@@ -56,7 +61,7 @@ class JsonFormatSpec extends Specification {
     "default_branch" : "master",
     "owner" : $apiUserJson,
     "forks_count" : 0,
-    "watchers_coun" : 0,
+    "watchers_count" : 0,
     "url" : "${context.baseUrl}/api/v3/repos/octocat/Hello-World",
     "http_url" : "${context.baseUrl}/git/octocat/Hello-World.git",
     "clone_url" : "${context.baseUrl}/git/octocat/Hello-World.git",
@@ -85,17 +90,70 @@ class JsonFormatSpec extends Specification {
     "url": "http://gitbucket.exmple.com/api/v3/repos/octocat/Hello-World/commits/6dcb09b5b57875f334f61aebed695e2e4193db5e/statuses"
   }"""
 
+  val apiPushCommit = ApiCommit(
+    id = "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+    message = "Update README.md",
+    timestamp = date1,
+    added = Nil,
+    removed = Nil,
+    modified = List("README.md"),
+    author = ApiPersonIdent("baxterthehacker","baxterthehacker@users.noreply.github.com",date1),
+    committer = ApiPersonIdent("baxterthehacker","baxterthehacker@users.noreply.github.com",date1))(RepositoryName("baxterthehacker", "public-repo"), true)
+  val apiPushCommitJson = s"""{
+      "id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+      // "distinct": true,
+      "message": "Update README.md",
+      "timestamp": "2011-04-14T16:00:49Z",
+      "url": "http://gitbucket.exmple.com/baxterthehacker/public-repo/commit/0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+      "author": {
+        "name": "baxterthehacker",
+        "email": "baxterthehacker@users.noreply.github.com",
+        // "username": "baxterthehacker",
+        "date" : "2011-04-14T16:00:49Z"
+      },
+      "committer": {
+        "name": "baxterthehacker",
+        "email": "baxterthehacker@users.noreply.github.com",
+        // "username": "baxterthehacker",
+        "date" : "2011-04-14T16:00:49Z"
+      },
+      "added": [
+
+      ],
+      "removed": [
+
+      ],
+      "modified": [
+        "README.md"
+      ]
+    }"""
+
   val apiComment = ApiComment(
     id =1,
     user = apiUser,
     body= "Me too",
     created_at= date1,
-    updated_at= date1)(RepositoryName("octocat","Hello-World"), 100)
+    updated_at= date1)(RepositoryName("octocat","Hello-World"), 100, false)
   val apiCommentJson = s"""{
     "id": 1,
     "body": "Me too",
     "user": $apiUserJson,
     "html_url" : "${context.baseUrl}/octocat/Hello-World/issues/100#comment-1",
+    "created_at": "2011-04-14T16:00:49Z",
+    "updated_at": "2011-04-14T16:00:49Z"
+  }"""
+
+  val apiCommentPR = ApiComment(
+    id =1,
+    user = apiUser,
+    body= "Me too",
+    created_at= date1,
+    updated_at= date1)(RepositoryName("octocat","Hello-World"), 100, true)
+  val apiCommentPRJson = s"""{
+    "id": 1,
+    "body": "Me too",
+    "user": $apiUserJson,
+    "html_url" : "${context.baseUrl}/octocat/Hello-World/pull/100#comment-1",
     "created_at": "2011-04-14T16:00:49Z",
     "updated_at": "2011-04-14T16:00:49Z"
   }"""
@@ -151,6 +209,15 @@ class JsonFormatSpec extends Specification {
     "url": "${context.baseUrl}/api/v3/repos/octocat/Hello-World/commits/$sha1/status"
   }"""
 
+  val apiLabel = ApiLabel(
+    name = "bug",
+    color = "f29513")(RepositoryName("octocat","Hello-World"))
+  val apiLabelJson = s"""{
+    "name": "bug",
+    "color": "f29513",
+    "url": "${context.baseUrl}/api/v3/repos/octocat/Hello-World/labels/bug"
+  }"""
+
   val apiIssue = ApiIssue(
       number = 1347,
       title  = "Found a bug",
@@ -158,7 +225,7 @@ class JsonFormatSpec extends Specification {
       state  = "open",
       body   = "I'm having a problem with this.",
       created_at = date1,
-      updated_at = date1)(RepositoryName("octocat","Hello-World"))
+      updated_at = date1)(RepositoryName("octocat","Hello-World"), false)
   val apiIssueJson = s"""{
     "number": 1347,
     "state": "open",
@@ -167,6 +234,26 @@ class JsonFormatSpec extends Specification {
     "user": $apiUserJson,
     "comments_url": "${context.baseUrl}/api/v3/repos/octocat/Hello-World/issues/1347/comments",
     "html_url": "${context.baseUrl}/octocat/Hello-World/issues/1347",
+    "created_at": "2011-04-14T16:00:49Z",
+    "updated_at": "2011-04-14T16:00:49Z"
+  }"""
+
+  val apiIssuePR = ApiIssue(
+      number = 1347,
+      title  = "Found a bug",
+      user   = apiUser,
+      state  = "open",
+      body   = "I'm having a problem with this.",
+      created_at = date1,
+      updated_at = date1)(RepositoryName("octocat","Hello-World"), true)
+  val apiIssuePRJson = s"""{
+    "number": 1347,
+    "state": "open",
+    "title": "Found a bug",
+    "body": "I'm having a problem with this.",
+    "user": $apiUserJson,
+    "comments_url": "${context.baseUrl}/api/v3/repos/octocat/Hello-World/issues/1347/comments",
+    "html_url": "${context.baseUrl}/octocat/Hello-World/pull/1347",
     "created_at": "2011-04-14T16:00:49Z",
     "updated_at": "2011-04-14T16:00:49Z"
   }"""
@@ -232,6 +319,61 @@ class JsonFormatSpec extends Specification {
   //  "deletions": 3,
   //  "changed_files": 5
     }"""
+
+  // https://developer.github.com/v3/activity/events/types/#pullrequestreviewcommentevent
+  val apiPullRequestReviewComment = ApiPullRequestReviewComment(
+    id = 29724692,
+  // "diff_hunk": "@@ -1 +1 @@\n-# public-repo",
+    path = "README.md",
+  // "position": 1,
+  // "original_position": 1,
+    commit_id = "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+  // "original_commit_id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+    user = apiUser,
+    body = "Maybe you should use more emojji on this line.",
+    created_at = date("2015-05-05T23:40:27Z"),
+    updated_at = date("2015-05-05T23:40:27Z")
+  )(RepositoryName("baxterthehacker/public-repo"), 1)
+  val apiPullRequestReviewCommentJson = s"""{
+    "url": "http://gitbucket.exmple.com/api/v3/repos/baxterthehacker/public-repo/pulls/comments/29724692",
+    "id": 29724692,
+    // "diff_hunk": "@@ -1 +1 @@\\n-# public-repo",
+    "path": "README.md",
+    // "position": 1,
+    // "original_position": 1,
+    "commit_id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+    // "original_commit_id": "0d1a26e67d8f5eaf1f6ba5c57fc3c7d91ac0fd1c",
+    "user": $apiUserJson,
+    "body": "Maybe you should use more emojji on this line.",
+    "created_at": "2015-05-05T23:40:27Z",
+    "updated_at": "2015-05-05T23:40:27Z",
+    "html_url": "http://gitbucket.exmple.com/baxterthehacker/public-repo/pull/1#discussion_r29724692",
+    "pull_request_url": "http://gitbucket.exmple.com/api/v3/repos/baxterthehacker/public-repo/pulls/1",
+    "_links": {
+      "self": {
+        "href": "http://gitbucket.exmple.com/api/v3/repos/baxterthehacker/public-repo/pulls/comments/29724692"
+      },
+      "html": {
+        "href": "http://gitbucket.exmple.com/baxterthehacker/public-repo/pull/1#discussion_r29724692"
+      },
+      "pull_request": {
+        "href": "http://gitbucket.exmple.com/api/v3/repos/baxterthehacker/public-repo/pulls/1"
+      }
+    }
+  }"""
+
+
+  val apiBranchProtection = ApiBranchProtection(true, Some(ApiBranchProtection.Status(ApiBranchProtection.Everyone, Seq("continuous-integration/travis-ci"))))
+  val apiBranchProtectionJson = """{
+    "enabled": true,
+    "required_status_checks": {
+      "enforcement_level": "everyone",
+      "contexts": [
+        "continuous-integration/travis-ci"
+      ]
+    }
+}"""
+
   def beFormatted(json2Arg:String) = new Matcher[String] {
     def apply[S <: String](e: Expectable[S]) = {
       import java.util.regex.Pattern
@@ -262,8 +404,12 @@ class JsonFormatSpec extends Specification {
     "repository" in {
         JsonFormat(repository) must beFormatted(repositoryJson)
     }
+    "apiPushCommit" in {
+        JsonFormat(apiPushCommit) must beFormatted(apiPushCommitJson)
+    }
     "apiComment" in {
         JsonFormat(apiComment) must beFormatted(apiCommentJson)
+        JsonFormat(apiCommentPR) must beFormatted(apiCommentPRJson)
     }
     "apiCommitListItem" in {
         JsonFormat(apiCommitListItem) must beFormatted(apiCommitListItemJson)
@@ -274,11 +420,21 @@ class JsonFormatSpec extends Specification {
     "apiCombinedCommitStatus" in {
       JsonFormat(apiCombinedCommitStatus) must beFormatted(apiCombinedCommitStatusJson)
     }
+    "apiLabel" in {
+      JsonFormat(apiLabel) must beFormatted(apiLabelJson)
+    }
     "apiIssue" in {
       JsonFormat(apiIssue) must beFormatted(apiIssueJson)
+      JsonFormat(apiIssuePR) must beFormatted(apiIssuePRJson)
     }
     "apiPullRequest" in {
       JsonFormat(apiPullRequest) must beFormatted(apiPullRequestJson)
+    }
+    "apiPullRequestReviewComment" in {
+      JsonFormat(apiPullRequestReviewComment) must beFormatted(apiPullRequestReviewCommentJson)
+    }
+    "apiBranchProtection" in {
+      JsonFormat(apiBranchProtection) must beFormatted(apiBranchProtectionJson)
     }
   }
 }

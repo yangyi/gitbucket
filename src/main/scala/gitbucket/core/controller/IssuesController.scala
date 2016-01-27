@@ -11,7 +11,7 @@ import gitbucket.core.util._
 import gitbucket.core.view
 import gitbucket.core.view.Markdown
 
-import jp.sf.amateras.scalatra.forms._
+import io.github.gitbucket.scalatra.forms._
 import org.scalatra.Ok
 
 
@@ -86,7 +86,7 @@ trait IssuesControllerBase extends ControllerBase {
       issueId <- params("id").toIntOpt
       comments = getCommentsForApi(repository.owner, repository.name, issueId.toInt)
     } yield {
-      JsonFormat(comments.map{ case (issueComment, user) => ApiComment(issueComment, RepositoryName(repository), issueId, ApiUser(user)) })
+      JsonFormat(comments.map{ case (issueComment, user, issue) => ApiComment(issueComment, RepositoryName(repository), issueId, ApiUser(user), issue.isPullRequest) })
     }).getOrElse(NotFound)
   })
 
@@ -190,7 +190,7 @@ trait IssuesControllerBase extends ControllerBase {
       (issue, id) <- handleComment(issueId, Some(body), repository)()
       issueComment <- getComment(repository.owner, repository.name, id.toString())
     } yield {
-      JsonFormat(ApiComment(issueComment, RepositoryName(repository), issueId, ApiUser(context.loginAccount.get)))
+      JsonFormat(ApiComment(issueComment, RepositoryName(repository), issueId, ApiUser(context.loginAccount.get), issue.isPullRequest))
     }) getOrElse NotFound
   })
 
@@ -231,10 +231,20 @@ trait IssuesControllerBase extends ControllerBase {
         } getOrElse {
           contentType = formats("json")
           org.json4s.jackson.Serialization.write(
-              Map("title"   -> x.title,
-                  "content" -> Markdown.toHtml(x.content getOrElse "No description given.",
-                      repository, false, true, true, isEditable(x.userName, x.repositoryName, x.openedUserName))
-              ))
+            Map(
+              "title"   -> x.title,
+              "content" -> Markdown.toHtml(
+                markdown = x.content getOrElse "No description given.",
+                repository = repository,
+                enableWikiLink = false,
+                enableRefsLink = true,
+                enableAnchor = true,
+                enableLineBreaks = true,
+                enableTaskList = true,
+                hasWritePermission = isEditable(x.userName, x.repositoryName, x.openedUserName)
+              )
+            )
+          )
         }
       } else Unauthorized
     } getOrElse NotFound
@@ -249,12 +259,28 @@ trait IssuesControllerBase extends ControllerBase {
         } getOrElse {
           contentType = formats("json")
           org.json4s.jackson.Serialization.write(
-              Map("content" -> view.Markdown.toHtml(x.content,
-                  repository, false, true, true, isEditable(x.userName, x.repositoryName, x.commentedUserName))
-              ))
+            Map(
+              "content" -> view.Markdown.toHtml(
+                markdown = x.content,
+                repository = repository,
+                enableWikiLink = false,
+                enableRefsLink = true,
+                enableAnchor = true,
+                enableLineBreaks = true,
+                enableTaskList = true,
+                hasWritePermission = isEditable(x.userName, x.repositoryName, x.commentedUserName)
+              )
+            )
+          )
         }
       } else Unauthorized
     } getOrElse NotFound
+  })
+
+  ajaxPost("/:owner/:repository/issues/new/label")(collaboratorsOnly { repository =>
+    val labelNames = params("labelNames").split(",")
+    val labels = getLabels(repository.owner, repository.name).filter(x => labelNames.contains(x.labelName))
+    html.labellist(labels)
   })
 
   ajaxPost("/:owner/:repository/issues/:id/label/new")(collaboratorsOnly { repository =>
@@ -326,6 +352,7 @@ trait IssuesControllerBase extends ControllerBase {
     (Directory.getAttachedDir(repository.owner, repository.name) match {
       case dir if(dir.exists && dir.isDirectory) =>
         dir.listFiles.find(_.getName.startsWith(params("file") + ".")).map { file =>
+          response.setHeader("Content-Disposition", f"""inline; filename=${file.getName}""")
           RawData(FileUtil.getMimeType(file.getName), file)
         }
       case _ => None
@@ -346,6 +373,7 @@ trait IssuesControllerBase extends ControllerBase {
     }
   }
 
+  // TODO Same method exists in PullRequestController. Should it moved to IssueService?
   private def createReferComment(owner: String, repository: String, fromIssue: Issue, message: String) = {
     StringUtil.extractIssueId(message).foreach { issueId =>
       val content = fromIssue.issueId + ":" + fromIssue.title
@@ -459,7 +487,11 @@ trait IssuesControllerBase extends ControllerBase {
           "issues",
           searchIssue(condition, false, (page - 1) * IssueLimit, IssueLimit, owner -> repoName),
           page,
-          (getCollaborators(owner, repoName) :+ owner).sorted,
+          if(!getAccountByUserName(owner).exists(_.isGroupAccount)){
+            (getCollaborators(owner, repoName) :+ owner).sorted
+          } else {
+            getCollaborators(owner, repoName)
+          },
           getMilestones(owner, repoName),
           getLabels(owner, repoName),
           countIssue(condition.copy(state = "open"  ), false, owner -> repoName),

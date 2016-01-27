@@ -5,7 +5,7 @@ import gitbucket.core.service.{AccountService, SystemSettingsService}
 import gitbucket.core.util.AdminAuthenticator
 import gitbucket.core.ssh.SshServer
 import SystemSettingsService._
-import jp.sf.amateras.scalatra.forms._
+import io.github.gitbucket.scalatra.forms._
 
 class SystemSettingsController extends SystemSettingsControllerBase
   with AccountService with AdminAuthenticator
@@ -24,7 +24,8 @@ trait SystemSettingsControllerBase extends ControllerBase {
     "activityLogLimit"         -> trim(label("Limit of activity logs", optional(number()))),
     "ssh"                      -> trim(label("SSH access", boolean())),
     "sshPort"                  -> trim(label("SSH port", optional(number()))),
-    "smtp"                     -> optionalIfNotChecked("notification", mapping(
+    "useSMTP"                  -> trim(label("SMTP", boolean())),
+    "smtp"                     -> optionalIfNotChecked("useSMTP", mapping(
         "host"                     -> trim(label("SMTP Host", text(required))),
         "port"                     -> trim(label("SMTP Port", optional(number()))),
         "user"                     -> trim(label("SMTP User", optional(text()))),

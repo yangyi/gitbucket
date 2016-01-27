@@ -7,9 +7,9 @@ import profile.api._
 
 trait CommitsService {
 
-  def getCommitComments(owner: String, repository: String, commitId: String, pullRequest: Boolean): DBIO[Seq[CommitComment]] =
+  def getCommitComments(owner: String, repository: String, commitId: String, includePullRequest: Boolean): DBIO[Seq[CommitComment]] =
     CommitComments filter {
-      t => t.byCommit(owner, repository, commitId) && (t.pullRequest === pullRequest || pullRequest)
+      t => t.byCommit(owner, repository, commitId) && (t.issueId.isEmpty || includePullRequest)
     } result
 
   def getCommitComment(owner: String, repository: String, commentId: String): DBIO[Option[CommitComment]] =
@@ -21,7 +21,7 @@ trait CommitsService {
       DBIO successful None
 
   def createCommitComment(owner: String, repository: String, commitId: String, loginUser: String,
-    content: String, fileName: Option[String], oldLine: Option[Int], newLine: Option[Int], pullRequest: Boolean): DBIO[Int] =
+    content: String, fileName: Option[String], oldLine: Option[Int], newLine: Option[Int], issueId: Option[Int]): DBIO[Int] =
     CommitComments.autoInc += CommitComment(
       userName          = owner,
       repositoryName    = repository,
@@ -33,7 +33,7 @@ trait CommitsService {
       newLine           = newLine,
       registeredDate    = currentDate,
       updatedDate       = currentDate,
-      pullRequest       = pullRequest)
+      issueId           = issueId)
 
   def updateCommitComment(commentId: Int, content: String): DBIO[Int] =
     CommitComments

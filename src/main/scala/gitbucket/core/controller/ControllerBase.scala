@@ -8,7 +8,7 @@ import gitbucket.core.util.Directory._
 import gitbucket.core.util.Implicits._
 import gitbucket.core.util._
 
-import jp.sf.amateras.scalatra.forms._
+import io.github.gitbucket.scalatra.forms._
 import org.apache.commons.io.FileUtils
 import org.json4s._
 import org.scalatra._
@@ -28,7 +28,11 @@ abstract class ControllerBase extends ScalatraFilter
   with ClientSideValidationFormSupport with JacksonJsonSupport with I18nSupport with FlashMapSupport with Validations
   with SystemSettingsService {
 
-  implicit val jsonFormats = DefaultFormats
+  implicit val jsonFormats = gitbucket.core.api.JsonFormat.jsonFormats
+
+  before("/api/v3/*") {
+    contentType = formats("json")
+  }
 
 // TODO Scala 2.11
 //  // Don't set content type via Accept header.
@@ -181,6 +185,13 @@ case class Context(settings: SystemSettingsService.SystemSettings, loginAccount:
   val currentPath = request.getRequestURI.substring(request.getContextPath.length)
   val baseUrl = settings.baseUrl(request)
   val host = new java.net.URL(baseUrl).getHost
+  val platform = request.getHeader("User-Agent") match {
+    case null => null
+    case agent if agent.contains("Mac") => "mac"
+    case agent if agent.contains("Linux") => "linux"
+    case agent if agent.contains("Win") => "windows"
+    case _ => null
+  }
 
   /**
    * Get object from cache.

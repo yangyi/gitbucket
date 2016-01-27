@@ -82,8 +82,8 @@ trait RepositorySearchService { self: IssuesService =>
         }
       }
     }
-    treeWalk.release
-    revWalk.release
+    treeWalk.close()
+    revWalk.close()
 
     list.toList
   }

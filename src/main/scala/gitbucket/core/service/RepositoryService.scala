@@ -46,17 +46,20 @@ trait RepositoryService { self: AccountService =>
       (Repositories filter { t => t.byRepository(oldUserName, oldRepositoryName) } firstOption).map { repository =>
         Repositories insert repository.copy(userName = newUserName, repositoryName = newRepositoryName)
 
-        val webHooks       = WebHooks      .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val milestones     = Milestones    .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val issueId        = IssueId       .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val issues         = Issues        .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val pullRequests   = PullRequests  .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val labels         = Labels        .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val issueComments  = IssueComments .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val issueLabels    = IssueLabels   .filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val commitComments = CommitComments.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val commitStatuses = CommitStatuses.filter(_.byRepository(oldUserName, oldRepositoryName)).list
-        val collaborators  = Collaborators .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val webHooks                = WebHooks               .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val webHookEvents           = WebHookEvents          .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val milestones              = Milestones             .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val issueId                 = IssueId                .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val issues                  = Issues                 .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val pullRequests            = PullRequests           .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val labels                  = Labels                 .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val issueComments           = IssueComments          .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val issueLabels             = IssueLabels            .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val commitComments          = CommitComments         .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val commitStatuses          = CommitStatuses         .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val collaborators           = Collaborators          .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val protectedBranches       = ProtectedBranches      .filter(_.byRepository(oldUserName, oldRepositoryName)).list
+        val protectedBranchContexts = ProtectedBranchContexts.filter(_.byRepository(oldUserName, oldRepositoryName)).list
 
         Repositories.filter { t =>
           (t.originUserName === oldUserName.bind) && (t.originRepositoryName === oldRepositoryName.bind)
@@ -65,10 +68,6 @@ trait RepositoryService { self: AccountService =>
         Repositories.filter { t =>
           (t.parentUserName === oldUserName.bind) && (t.parentRepositoryName === oldRepositoryName.bind)
         }.map { t => t.originUserName -> t.originRepositoryName }.update(newUserName, newRepositoryName)
-
-        PullRequests.filter { t =>
-          t.requestRepositoryName === oldRepositoryName.bind
-        }.map { t => t.requestUserName -> t.requestRepositoryName }.update(newUserName, newRepositoryName)
 
         // Updates activity fk before deleting repository because activity is sorted by activityId
         // and it can't be changed by deleting-and-inserting record.
@@ -79,9 +78,10 @@ trait RepositoryService { self: AccountService =>
 
         deleteRepository(oldUserName, oldRepositoryName)
 
-        WebHooks  .insertAll(webHooks      .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
-        Milestones.insertAll(milestones    .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
-        IssueId   .insertAll(issueId       .map(_.copy(_1       = newUserName, _2             = newRepositoryName)) :_*)
+        WebHooks     .insertAll(webHooks      .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        WebHookEvents.insertAll(webHookEvents .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        Milestones   .insertAll(milestones    .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        IssueId      .insertAll(issueId       .map(_.copy(_1       = newUserName, _2             = newRepositoryName)) :_*)
 
         val newMilestones = Milestones.filter(_.byRepository(newUserName, newRepositoryName)).list
         Issues.insertAll(issues.map { x => x.copy(
@@ -92,11 +92,18 @@ trait RepositoryService { self: AccountService =>
           }
         )} :_*)
 
-        PullRequests  .insertAll(pullRequests  .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
-        IssueComments .insertAll(issueComments .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
-        Labels        .insertAll(labels        .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
-        CommitComments.insertAll(commitComments.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
-        CommitStatuses.insertAll(commitStatuses.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        PullRequests           .insertAll(pullRequests  .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        IssueComments          .insertAll(issueComments .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        Labels                 .insertAll(labels        .map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        CommitComments         .insertAll(commitComments.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        CommitStatuses         .insertAll(commitStatuses.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        ProtectedBranches      .insertAll(protectedBranches.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+        ProtectedBranchContexts.insertAll(protectedBranchContexts.map(_.copy(userName = newUserName, repositoryName = newRepositoryName)) :_*)
+
+        // Update source repository of pull requests
+        PullRequests.filter { t =>
+          (t.requestUserName === oldUserName.bind) && (t.requestRepositoryName === oldRepositoryName.bind)
+        }.map { t => t.requestUserName -> t.requestRepositoryName }.update(newUserName, newRepositoryName)
 
         // Convert labelId
         val oldLabelMap = labels.map(x => (x.labelId, x.labelName)).toMap
@@ -145,6 +152,7 @@ trait RepositoryService { self: AccountService =>
     IssueId       .filter(_.byRepository(userName, repositoryName)).delete
     Milestones    .filter(_.byRepository(userName, repositoryName)).delete
     WebHooks      .filter(_.byRepository(userName, repositoryName)).delete
+    WebHookEvents .filter(_.byRepository(userName, repositoryName)).delete
     Repositories  .filter(_.byRepository(userName, repositoryName)).delete
 
     // Update ORIGIN_USER_NAME and ORIGIN_REPOSITORY_NAME
@@ -305,11 +313,17 @@ trait RepositoryService { self: AccountService =>
   /**
    * Save repository options.
    */
-  def saveRepositoryOptions(userName: String, repositoryName: String, 
-      description: Option[String], defaultBranch: String, isPrivate: Boolean)(implicit s: Session): Unit =
+  def saveRepositoryOptions(userName: String, repositoryName: String,
+      description: Option[String], isPrivate: Boolean)(implicit s: Session): Unit =
     Repositories.filter(_.byRepository(userName, repositoryName))
-      .map { r => (r.description.?, r.defaultBranch, r.isPrivate, r.updatedDate) }
-      .update (description, defaultBranch, isPrivate, currentDate)
+      .map { r => (r.description.?, r.isPrivate, r.updatedDate) }
+      .update (description, isPrivate, currentDate)
+
+  def saveRepositoryDefaultBranch(userName: String, repositoryName: String,
+      defaultBranch: String)(implicit s: Session): Unit =
+    Repositories.filter(_.byRepository(userName, repositoryName))
+      .map { r => r.defaultBranch }
+      .update (defaultBranch)
 
   /**
    * Add collaborator to the repository.
@@ -382,6 +396,12 @@ object RepositoryService {
     lazy val host = """^https?://(.+?)(:\d+)?/""".r.findFirstMatchIn(httpUrl).get.group(1)
 
     def sshUrl(port: Int, userName: String) = s"ssh://${userName}@${host}:${port}/${owner}/${name}.git"
+
+    def sshOpenRepoUrl(platform: String, port: Int, userName: String) = openRepoUrl(platform, sshUrl(port, userName))
+
+    def httpOpenRepoUrl(platform: String) = openRepoUrl(platform, httpUrl)
+
+    def openRepoUrl(platform: String, openUrl: String) = s"github-${platform}://openRepo/${openUrl}"
 
     /**
      * Creates instance with issue count and pull request count.
