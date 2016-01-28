@@ -1,4 +1,4 @@
-@(account: Option[gitbucket.core.model.Account], members: List[gitbucket.core.model.GroupMember])(implicit context: gitbucket.core.controller.Context)
+@(account: Option[gitbucket.core.model.Account], members: Seq[gitbucket.core.model.GroupMember])(implicit context: gitbucket.core.controller.Context)
 @import context._
 @import gitbucket.core.view.helpers._
 @html.main(if(account.isEmpty) "Create group" else "Edit group"){

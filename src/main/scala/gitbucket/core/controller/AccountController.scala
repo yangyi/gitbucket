@@ -18,6 +18,9 @@ import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.dircache.DirCache
 import org.eclipse.jgit.lib.{FileMode, Constants}
 import org.scalatra.i18n.Messages
+import slick.dbio.DBIO
+
+import scala.concurrent.ExecutionContext.Implicits.global
 
 
 class AccountController extends AccountControllerBase
@@ -113,6 +116,7 @@ trait AccountControllerBase extends AccountManagementControllerBase {
    */
   get("/:userName") {
     val userName = params("userName")
+    // TODO [Slick3]Move to Slick3
     getAccountByUserName(userName).map { account =>
       params.getOrElse("tab", "repositories") match {
         // Public Activity
@@ -142,27 +146,39 @@ trait AccountControllerBase extends AccountManagementControllerBase {
 
   get("/:userName.atom") {
     val userName = params("userName")
-    contentType = "application/atom+xml; type=feed"
-    helper.xml.feed(getActivitiesByUser(userName, true))
+    val action = for {
+      activities <- getActivitiesByUser(userName, true)
+    } yield {
+      contentType = "application/atom+xml; type=feed"
+      helper.xml.feed(activities)
+    }
+    // TODO [Slick3]run action
   }
 
   get("/:userName/_avatar"){
     val userName = params("userName")
-    getAccountByUserName(userName).flatMap(_.image).map { image =>
+    val action = for {
+      account <- getAccountByUserName(userName)
+    } yield account.flatMap(_.image).map { image =>
       RawData(FileUtil.getMimeType(image), new java.io.File(getUserUploadDir(userName), image))
     } getOrElse {
       contentType = "image/png"
       Thread.currentThread.getContextClassLoader.getResourceAsStream("noimage.png")
     }
+    // TODO [Slick3]run action
   }
 
   /**
    * https://developer.github.com/v3/users/#get-a-single-user
    */
   get("/api/v3/users/:userName") {
-    getAccountByUserName(params("userName")).map { account =>
+    val userName = params("userName")
+    val account = for {
+      account <- getAccountByUserName(userName)
+    } yield account.map { account =>
       JsonFormat(ApiUser(account))
     } getOrElse NotFound
+    // TODO [Slick3]run action
   }
 
   /**
@@ -177,101 +193,122 @@ trait AccountControllerBase extends AccountManagementControllerBase {
 
   get("/:userName/_edit")(oneselfOnly {
     val userName = params("userName")
-    getAccountByUserName(userName).map { x =>
-      html.edit(x, flash.get("info"))
+    val action = for {
+      account <- getAccountByUserName(userName)
+    } yield account.map { account =>
+      html.edit(account, flash.get("info"))
     } getOrElse NotFound
+    // TODO [Slick3]run action
   })
 
   post("/:userName/_edit", editForm)(oneselfOnly { form =>
     val userName = params("userName")
-    getAccountByUserName(userName).map { account =>
-      updateAccount(account.copy(
-        password    = form.password.map(sha1).getOrElse(account.password),
-        fullName    = form.fullName,
-        mailAddress = form.mailAddress,
-        url         = form.url))
-
-      updateImage(userName, form.fileId, form.clearImage)
-      flash += "info" -> "Account information has been updated."
-      redirect(s"/${userName}/_edit")
-
-    } getOrElse NotFound
+    val action = for {
+      account <- getAccountByUserName(userName)
+      result  <- account.map { account =>
+        updateAccount(account.copy(
+          password = form.password.map(sha1).getOrElse(account.password),
+          fullName = form.fullName,
+          mailAddress = form.mailAddress,
+          url = form.url)
+        ).map { _ =>
+          updateImage(userName, form.fileId, form.clearImage)
+          flash += "info" -> "Account information has been updated."
+          redirect(s"/${userName}/_edit")
+        }
+      } getOrElse DBIO.successful(NotFound)
+    } yield result
+    // TODO [Slick3]run action
   })
 
   get("/:userName/_delete")(oneselfOnly {
     val userName = params("userName")
-
-    getAccountByUserName(userName, true).foreach { account =>
-//      // Remove repositories
-//      getRepositoryNamesOfUser(userName).foreach { repositoryName =>
-//        deleteRepository(userName, repositoryName)
-//        FileUtils.deleteDirectory(getRepositoryDir(userName, repositoryName))
-//        FileUtils.deleteDirectory(getWikiRepositoryDir(userName, repositoryName))
-//        FileUtils.deleteDirectory(getTemporaryDir(userName, repositoryName))
-//      }
-//      // Remove from GROUP_MEMBER, COLLABORATOR and REPOSITORY
-//      removeUserRelatedData(userName)
-
-      removeUserRelatedData(userName)
-      updateAccount(account.copy(isRemoved = true))
+    val action = for {
+      account <- getAccountByUserName(userName, true)
+      result  <- account.map { account =>
+        removeUserRelatedData(userName)
+        updateAccount(account.copy(isRemoved = true))
+      } getOrElse DBIO.successful(0)
+    } yield {
+      session.invalidate
+      redirect("/")
     }
-
-    session.invalidate
-    redirect("/")
+    // TODO [Slick3]run action
   })
 
   get("/:userName/_ssh")(oneselfOnly {
     val userName = params("userName")
-    getAccountByUserName(userName).map { x =>
-      html.ssh(x, getPublicKeys(x.userName))
-    } getOrElse NotFound
+    val account = for {
+      account <- getAccountByUserName(userName)
+      result  <- account.map { account =>
+        getPublicKeys(account.userName).map { sshKeys =>
+          html.ssh(account, sshKeys)
+        }
+      } getOrElse DBIO.successful(NotFound)
+    } yield result
+    // TODO [Slick3]run action
   })
 
   post("/:userName/_ssh", sshKeyForm)(oneselfOnly { form =>
     val userName = params("userName")
-    addPublicKey(userName, form.title, form.publicKey)
-    redirect(s"/${userName}/_ssh")
+    val action = for {
+      _ <- addPublicKey(userName, form.title, form.publicKey)
+    } yield redirect(s"/${userName}/_ssh")
+    // TODO [Slick3]run action
   })
 
   get("/:userName/_ssh/delete/:id")(oneselfOnly {
     val userName = params("userName")
     val sshKeyId = params("id").toInt
-    deletePublicKey(userName, sshKeyId)
-    redirect(s"/${userName}/_ssh")
+    val action = for {
+      _ <- deletePublicKey(userName, sshKeyId)
+    } yield redirect(s"/${userName}/_ssh")
+    // TODO [Slick3]run action
   })
 
   get("/:userName/_application")(oneselfOnly {
     val userName = params("userName")
-    getAccountByUserName(userName).map { x =>
-      var tokens = getAccessTokens(x.userName)
-      val generatedToken = flash.get("generatedToken") match {
-        case Some((tokenId:Int, token:String)) => {
-          val gt = tokens.find(_.accessTokenId == tokenId)
-          gt.map{ t =>
-            tokens = tokens.filterNot(_ == t)
-            (t, token)
+    val action = for {
+      account <- getAccountByUserName(userName)
+      result  <- account.map { account =>
+        getAccessTokens(account.userName).map { accessTokens =>
+          var tokens = accessTokens
+          val generatedToken = flash.get("generatedToken") match {
+            case Some((tokenId: Int, token: String)) => {
+              val gt = tokens.find(_.accessTokenId == tokenId)
+              gt.map { t =>
+                tokens = tokens.filterNot(_ == t)
+                (t, token)
+              }
+            }
+            case _ => None
           }
+          html.application(account, tokens, generatedToken)
         }
-        case _ => None
-      }
-      html.application(x, tokens, generatedToken)
-    } getOrElse NotFound
+      } getOrElse DBIO.successful(NotFound)
+    } yield result
+    // TODO [Slick3]run action
   })
 
   post("/:userName/_personalToken", personalTokenForm)(oneselfOnly { form =>
     val userName = params("userName")
-    getAccountByUserName(userName).map { x =>
-      val (tokenId, token) = generateAccessToken(userName, form.note)
-      flash += "generatedToken" -> (tokenId, token)
-    }
-    redirect(s"/${userName}/_application")
+    val action = for {
+      account <- getAccountByUserName(userName)
+      result  <- account.map { _ =>
+        val (tokenId, token) = generateAccessToken(userName, form.note)
+        flash += "generatedToken" -> (tokenId, token)
+      }
+    } yield redirect(s"/${userName}/_application")
+    // TODO [Slick3]run action
   })
 
   get("/:userName/_personalToken/delete/:id")(oneselfOnly {
     val userName = params("userName")
     val tokenId = params("id").toInt
-    deleteAccessToken(userName, tokenId)
-    redirect(s"/${userName}/_application")
+    val action = for {
+      _ <- deleteAccessToken(userName, tokenId)
+    } yield redirect(s"/${userName}/_application")
+    // TODO [Slick3]run action
   })
 
   get("/register"){
@@ -286,9 +323,13 @@ trait AccountControllerBase extends AccountManagementControllerBase {
 
   post("/register", newForm){ form =>
     if(context.settings.allowAccountRegistration){
-      createAccount(form.userName, sha1(form.password), form.fullName, form.mailAddress, false, form.url)
-      updateImage(form.userName, form.fileId, false)
-      redirect("/signin")
+      val action = for {
+        _ <- createAccount(form.userName, sha1(form.password), form.fullName, form.mailAddress, false, form.url)
+      } yield {
+        updateImage(form.userName, form.fileId, false)
+        redirect("/signin")
+      }
+      // TODO [Slick3]run action
     } else NotFound
   }
 
@@ -297,23 +338,32 @@ trait AccountControllerBase extends AccountManagementControllerBase {
   })
 
   post("/groups/new", newGroupForm)(usersOnly { form =>
-    createGroup(form.groupName, form.url)
-    updateGroupMembers(form.groupName, form.members.split(",").map {
-      _.split(":") match {
-        case Array(userName, isManager) => (userName, isManager.toBoolean)
-      }
-    }.toList)
-    updateImage(form.groupName, form.fileId, false)
-    redirect(s"/${form.groupName}")
+    val action = for {
+      _ <- createGroup(form.groupName, form.url)
+      _ <- updateGroupMembers(form.groupName, form.members.split(",").map {
+        _.split(":") match {
+          case Array(userName, isManager) => (userName, isManager.toBoolean)
+        }
+      }.toList)
+    } yield {
+      updateImage(form.groupName, form.fileId, false)
+      redirect(s"/${form.groupName}")
+    }
+    // TODO [Slick3]run action
   })
 
   get("/:groupName/_editgroup")(managersOnly {
     defining(params("groupName")){ groupName =>
-      html.group(getAccountByUserName(groupName, true), getGroupMembers(groupName))
+      val action = for {
+        account <- getAccountByUserName(groupName, true)
+        members <- getGroupMembers(groupName)
+      } yield html.group(account, members)
+      // TODO [Slick3]run action
     }
   })
 
   get("/:groupName/_deletegroup")(managersOnly {
+    // TODO [Slick3]Move to Slick3
     defining(params("groupName")){ groupName =>
       // Remove from GROUP_MEMBER
       updateGroupMembers(groupName, Nil)
@@ -329,6 +379,7 @@ trait AccountControllerBase extends AccountManagementControllerBase {
   })
 
   post("/:groupName/_editgroup", editGroupForm)(managersOnly { form =>
+    // TODO [Slick3]Move to Slick3
     defining(params("groupName"), form.members.split(",").map {
       _.split(":") match {
         case Array(userName, isManager) => (userName, isManager.toBoolean)
@@ -358,13 +409,17 @@ trait AccountControllerBase extends AccountManagementControllerBase {
    * Show the new repository form.
    */
   get("/new")(usersOnly {
-    html.newrepo(getGroupsByUserName(context.loginAccount.get.userName), context.settings.isCreateRepoOptionPublic)
+    val action = for {
+      groups <- getGroupsByUserName(context.loginAccount.get.userName)
+    } yield html.newrepo(groups, context.settings.isCreateRepoOptionPublic)
+    // TODO [Slick3]run action
   })
 
   /**
    * Create new repository.
    */
   post("/new", newRepositoryForm)(usersOnly { form =>
+    // TODO [Slick3] Move to Slick3
     LockUtil.lock(s"${form.owner}/${form.name}"){
       if(getRepository(form.owner, form.name, context.baseUrl).isEmpty){
         createRepository(form.owner, form.name, form.description, form.isPrivate, form.createReadme)
@@ -380,6 +435,7 @@ trait AccountControllerBase extends AccountManagementControllerBase {
    * https://developer.github.com/v3/repos/#create
    */
   post("/api/v3/user/repos")(usersOnly {
+    // TODO [Slick3] Move to Slick3
     val owner = context.loginAccount.get.userName
     (for {
       data <- extractFromJsonBody[CreateARepository] if data.isValid
@@ -404,6 +460,7 @@ trait AccountControllerBase extends AccountManagementControllerBase {
    * https://developer.github.com/v3/repos/#create
    */
   post("/api/v3/orgs/:org/repos")(managersOnly {
+    // TODO [Slick3] Move to Slick3
     val groupName = params("org")
     (for {
       data <- extractFromJsonBody[CreateARepository] if data.isValid
@@ -427,18 +484,20 @@ trait AccountControllerBase extends AccountManagementControllerBase {
     val loginAccount   = context.loginAccount.get
     val loginUserName  = loginAccount.userName
     val groups         = getGroupsByUserName(loginUserName)
-    groups match {
-      case _: List[String] =>
-        val managerPermissions = groups.map { group =>
-          val members = getGroupMembers(group)
-          context.loginAccount.exists(x => members.exists { member => member.userName == x.userName && member.isManager })
+
+    val action = for {
+      groups <- getGroupsByUserName(loginUserName)
+      managerPermissions <- DBIO.sequence(groups.map { group =>
+        for {
+          members <- getGroupMembers(group)
+        } yield {
+          context.loginAccount.exists(x => members.exists {
+            member => member.userName == x.userName && member.isManager
+          })
         }
-        helper.html.forkrepository(
-          repository,
-          (groups zip managerPermissions).toMap
-        )
-      case _ => redirect(s"/${loginUserName}")
-    }
+      })
+    } yield helper.html.forkrepository(repository, (groups zip managerPermissions).toMap)
+    // TODO [Slick3]run action
   })
 
   post("/:owner/:repository/fork", accountForm)(readableUsersOnly { (form, repository) =>
@@ -446,6 +505,7 @@ trait AccountControllerBase extends AccountManagementControllerBase {
     val loginUserName = loginAccount.userName
     val accountName   = form.accountName
 
+    // TODO [Slick3]Moving to Slick3 is hard...
     LockUtil.lock(s"${accountName}/${repository.name}"){
       if(getRepository(accountName, repository.name, baseUrl).isDefined ||
           (accountName != loginUserName && !getGroupsByUserName(loginUserName).contains(accountName))){
@@ -501,6 +561,8 @@ trait AccountControllerBase extends AccountManagementControllerBase {
     val loginAccount  = context.loginAccount.get
     val loginUserName = loginAccount.userName
 
+    // TODO [Slick3]Moving to Slick3 is hard...
+
     // Insert to the database at first
     createRepository(name, owner, description, isPrivate)
 
@@ -549,15 +611,18 @@ trait AccountControllerBase extends AccountManagementControllerBase {
     recordCreateRepositoryActivity(owner, name, loginUserName)
   }
 
-  private def insertDefaultLabels(userName: String, repositoryName: String): Unit = {
-    createLabel(userName, repositoryName, "bug", "fc2929")
-    createLabel(userName, repositoryName, "duplicate", "cccccc")
-    createLabel(userName, repositoryName, "enhancement", "84b6eb")
-    createLabel(userName, repositoryName, "invalid", "e6e6e6")
-    createLabel(userName, repositoryName, "question", "cc317c")
-    createLabel(userName, repositoryName, "wontfix", "ffffff")
+  private def insertDefaultLabels(userName: String, repositoryName: String): DBIO[Unit] = {
+    DBIO.seq(
+      createLabel(userName, repositoryName, "bug", "fc2929"),
+      createLabel(userName, repositoryName, "duplicate", "cccccc"),
+      createLabel(userName, repositoryName, "enhancement", "84b6eb"),
+      createLabel(userName, repositoryName, "invalid", "e6e6e6"),
+      createLabel(userName, repositoryName, "question", "cc317c"),
+      createLabel(userName, repositoryName, "wontfix", "ffffff")
+    )
   }
 
+  // TODO [Slick3]DB access in validation...
   private def existsAccount: Constraint = new Constraint(){
     override def validate(name: String, value: String, messages: Messages): Option[String] =
       if(getAccountByUserName(value).isEmpty) Some("User or group does not exist.") else None

@@ -7,7 +7,7 @@ import profile.simple._
 
 import org.eclipse.jgit.transport.{ReceivePack, ReceiveCommand}
 
-
+// TODO [Slick3]Move to DBIO
 trait ProtectedBranchService {
   import ProtectedBranchService._
   private def getProtectedBranchInfoOpt(owner: String, repository: String, branch: String)(implicit session: Session): Option[ProtectedBranchInfo] =

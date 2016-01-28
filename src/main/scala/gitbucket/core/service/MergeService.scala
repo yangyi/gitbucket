@@ -1,5 +1,6 @@
 package gitbucket.core.service
 
+import gitbucket.core.model.Account
 import gitbucket.core.util.Directory._
 import gitbucket.core.util.ControlUtil._
 
