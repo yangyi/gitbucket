@@ -2,23 +2,16 @@ package gitbucket.core.util
 
 import gitbucket.core.api.JsonFormat
 import gitbucket.core.controller.Context
-import gitbucket.core.servlet.Database
 
 import javax.servlet.http.{HttpSession, HttpServletRequest}
 
 import scala.util.matching.Regex
 import scala.util.control.Exception._
 
-import slick.jdbc.JdbcBackend
-
-
 /**
  * Provides some usable implicit conversions.
  */
 object Implicits {
-
-  // TODO Convert to slick session.
-  implicit def request2Session(implicit request: HttpServletRequest): JdbcBackend#Session = Database.getSession(request)
 
   implicit def context2ApiJsonFormatContext(implicit context: Context): JsonFormat.Context = JsonFormat.Context(context.baseUrl)
 
