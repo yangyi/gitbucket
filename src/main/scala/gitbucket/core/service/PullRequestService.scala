@@ -1,32 +1,29 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.{Issue, PullRequest, CommitStatus, CommitState}
-import gitbucket.core.model.Profile._
+import gitbucket.core.model.Profile._, profile.api._
 import gitbucket.core.util.JGitUtil
-import profile.api._
-
+import scala.concurrent.ExecutionContext
+import scalaz.OptionT
 
 trait PullRequestService { self: IssuesService =>
   import PullRequestService._
 
   def getPullRequest(owner: String, repository: String, issueId: Int)
-                    : DBIO[Option[(Issue, PullRequest)]] =
+                    (implicit e: ExecutionContext): DBIO[Option[(Issue, PullRequest)]] = (
     for {
-      issue   <- getIssue(owner, repository, issueId.toString)
-      pullreq <- PullRequests.filter(_.byPrimaryKey(owner, repository, issueId)).result.headOption
+      issue   <- OptionT.optionT[DBIO](getIssue(owner, repository, issueId.toString))
+      pullreq <- OptionT.optionT[DBIO](PullRequests.filter(_.byPrimaryKey(owner, repository, issueId)).result.headOption)
+    } yield issue -> pullreq
+  ).run
 
-    } yield issue.flatMap { x =>
-      pullreq.map(x -> _)
-    }
-
-  def updateCommitId(owner: String, repository: String, issueId: Int, commitIdTo: String, commitIdFrom: String)
-                    : DBIO[Int] =
+  def updateCommitId(owner: String, repository: String, issueId: Int, commitIdTo: String, commitIdFrom: String): DBIO[Int] =
     PullRequests.filter(_.byPrimaryKey(owner, repository, issueId))
-                .map(pr => pr.commitIdTo -> pr.commitIdFrom)
-                .update((commitIdTo, commitIdFrom))
+      .map(pr => pr.commitIdTo -> pr.commitIdFrom)
+      .update((commitIdTo, commitIdFrom))
 
   def getPullRequestCountGroupByUser(closed: Boolean, owner: Option[String], repository: Option[String])
-                                    : DBIO[Seq[PullRequestCount]] =
+                                    (implicit e: ExecutionContext): DBIO[Seq[PullRequestCount]] =
     PullRequests
       .join(Issues).on { (t1, t2) => t1.byPrimaryKey(t2.userName, t2.repositoryName, t2.issueId) }
       .filter { case (t1, t2) =>
@@ -41,8 +38,8 @@ trait PullRequestService { self: IssuesService =>
       .map { _.map ( x => PullRequestCount(x._1, x._2) ) }
 
   def createPullRequest(originUserName: String, originRepositoryName: String, issueId: Int,
-        originBranch: String, requestUserName: String, requestRepositoryName: String, requestBranch: String,
-        commitIdFrom: String, commitIdTo: String): DBIO[Int] =
+                        originBranch: String, requestUserName: String, requestRepositoryName: String, requestBranch: String,
+                        commitIdFrom: String, commitIdTo: String): DBIO[Int] =
     PullRequests += PullRequest(
       originUserName,
       originRepositoryName,
@@ -54,8 +51,7 @@ trait PullRequestService { self: IssuesService =>
       commitIdFrom,
       commitIdTo)
 
-  def getPullRequestsByRequest(userName: String, repositoryName: String, branch: String, closed: Boolean)
-                              : DBIO[Seq[PullRequest]] =
+  def getPullRequestsByRequest(userName: String, repositoryName: String, branch: String, closed: Boolean): DBIO[Seq[PullRequest]] =
     PullRequests
       .join(Issues).on { (t1, t2) => t1.byPrimaryKey(t2.userName, t2.repositoryName, t2.issueId) }
       .filter { case (t1, t2) =>
@@ -74,8 +70,7 @@ trait PullRequestService { self: IssuesService =>
    *   2. return if exists pull request to othre branch
    * 2. return None
    */
-  def getPullRequestFromBranch(userName: String, repositoryName: String, branch: String, defaultBranch: String)
-                              : DBIO[Option[(PullRequest, Issue)]] =
+  def getPullRequestFromBranch(userName: String, repositoryName: String, branch: String, defaultBranch: String): DBIO[Option[(PullRequest, Issue)]] =
     PullRequests
       .join(Issues).on { (t1, t2) => t1.byPrimaryKey(t2.userName, t2.repositoryName, t2.issueId) }
       .filter { case (t1, t2) =>
@@ -93,23 +88,22 @@ trait PullRequestService { self: IssuesService =>
   /**
    * Fetch pull request contents into refs/pull/${issueId}/head and update pull request table.
    */
-  def updatePullRequests(owner: String, repository: String, branch: String): DBIO[Unit] =
+  def updatePullRequests(owner: String, repository: String, branch: String)
+                        (implicit e: ExecutionContext): DBIO[Unit] =
     getPullRequestsByRequest(owner, repository, branch, false).flatMap { pullreq =>
       DBIO.seq(pullreq.map { x =>
-        for {
-          exists <- Repositories.filter(_.byRepository(x.userName, x.repositoryName)).exists.result
-          if exists
-          (commitIdTo, commitIdFrom) = JGitUtil.updatePullRequest(
-            x.userName, x.repositoryName, x.branch, x.issueId,
-            x.requestUserName, x.requestRepositoryName, x.requestBranch)
-          _ <- updateCommitId(x.userName, x.repositoryName, x.issueId, commitIdTo, commitIdFrom)
-
-        } yield ()
+        Repositories.filter(_.byRepository(x.userName, x.repositoryName)).exists.result.flatMap {
+          case true =>
+            val (commitIdTo, commitIdFrom) = JGitUtil.updatePullRequest(
+              x.userName, x.repositoryName, x.branch, x.issueId,
+              x.requestUserName, x.requestRepositoryName, x.requestBranch)
+            updateCommitId(x.userName, x.repositoryName, x.issueId, commitIdTo, commitIdFrom)
+          case false => DBIO successful ()
+        }
       }: _*)
     }
 
-  def getPullRequestByRequestCommit(userName: String, repositoryName: String, toBranch:String, fromBranch: String, commitId: String)
-                                   : DBIO[Option[(PullRequest, Issue)]] = {
+  def getPullRequestByRequestCommit(userName: String, repositoryName: String, toBranch:String, fromBranch: String, commitId: String): DBIO[Option[(PullRequest, Issue)]] = {
     if(toBranch == fromBranch){
       DBIO.successful(None)
     } else {

@@ -1,17 +1,18 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.Activity
-import gitbucket.core.model.Profile._
+import gitbucket.core.model.Profile._, profile.api._
 import gitbucket.core.util.JGitUtil
-import profile.api._
+import scala.concurrent.ExecutionContext
+import scalaz.OptionT
 
 trait ActivityService {
 
-  def deleteOldActivities(limit: Int): DBIO[Int] = {
-    Activities.map(_.activityId).sortBy(_ desc).drop(limit).result.headOption.flatMap {
-      case Some(id) => Activities.filter(_.activityId <= id.bind).delete
-      case None     => DBIO.successful(0)
-    }
+  def deleteOldActivities(limit: Int)
+                         (implicit e: ExecutionContext): DBIO[Int] = {
+    OptionT.optionT[DBIO](Activities.map(_.activityId).sortBy(_ desc).drop(limit).result.headOption)
+      .flatMapF(id => Activities.filter(_.activityId <= id.bind).delete)
+      .getOrElse(0)
   }
 
   def getActivitiesByUser(activityUserName: String, isPublic: Boolean): DBIO[Seq[Activity]] =
@@ -47,64 +48,56 @@ trait ActivityService {
       .take(30)
       .result
 
-  def recordCreateRepositoryActivity(userName: String, repositoryName: String, activityUserName: String)
-                                    : DBIO[Int] =
+  def recordCreateRepositoryActivity(userName: String, repositoryName: String, activityUserName: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "create_repository",
       s"[user:${activityUserName}] created [repo:${userName}/${repositoryName}]",
       None,
       currentDate)
 
-  def recordCreateIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String)
-                               : DBIO[Int] =
+  def recordCreateIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "open_issue",
       s"[user:${activityUserName}] opened issue [issue:${userName}/${repositoryName}#${issueId}]",
-      Some(title), 
+      Some(title),
       currentDate)
 
-  def recordCloseIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String)
-                              : DBIO[Int] =
+  def recordCloseIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "close_issue",
       s"[user:${activityUserName}] closed issue [issue:${userName}/${repositoryName}#${issueId}]",
       Some(title),
       currentDate)
 
-  def recordClosePullRequestActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String)
-                                    : DBIO[Int] =
+  def recordClosePullRequestActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "close_issue",
       s"[user:${activityUserName}] closed pull request [pullreq:${userName}/${repositoryName}#${issueId}]",
       Some(title),
       currentDate)
 
-  def recordReopenIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String)
-                               : DBIO[Int] =
+  def recordReopenIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "reopen_issue",
       s"[user:${activityUserName}] reopened issue [issue:${userName}/${repositoryName}#${issueId}]",
       Some(title),
       currentDate)
 
-  def recordCommentIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, comment: String)
-                                : DBIO[Int] =
+  def recordCommentIssueActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, comment: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "comment_issue",
       s"[user:${activityUserName}] commented on issue [issue:${userName}/${repositoryName}#${issueId}]",
       Some(cut(comment, 200)),
       currentDate)
 
-  def recordCommentPullRequestActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, comment: String)
-                                      : DBIO[Int] =
+  def recordCommentPullRequestActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, comment: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "comment_issue",
       s"[user:${activityUserName}] commented on pull request [pullreq:${userName}/${repositoryName}#${issueId}]",
       Some(cut(comment, 200)),
       currentDate)
 
-  def recordCommentCommitActivity(userName: String, repositoryName: String, activityUserName: String, commitId: String, comment: String)
-                                 : DBIO[Int] =
+  def recordCommentCommitActivity(userName: String, repositoryName: String, activityUserName: String, commitId: String, comment: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "comment_commit",
       s"[user:${activityUserName}] commented on commit [commit:${userName}/${repositoryName}@${commitId}]",
@@ -112,16 +105,14 @@ trait ActivityService {
       currentDate
     )
 
-  def recordCreateWikiPageActivity(userName: String, repositoryName: String, activityUserName: String, pageName: String)
-                                  : DBIO[Int] =
+  def recordCreateWikiPageActivity(userName: String, repositoryName: String, activityUserName: String, pageName: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "create_wiki",
       s"[user:${activityUserName}] created the [repo:${userName}/${repositoryName}] wiki",
       Some(pageName),
       currentDate)
 
-  def recordEditWikiPageActivity(userName: String, repositoryName: String, activityUserName: String, pageName: String, commitId: String)
-                                : DBIO[Int] =
+  def recordEditWikiPageActivity(userName: String, repositoryName: String, activityUserName: String, pageName: String, commitId: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "edit_wiki",
       s"[user:${activityUserName}] edited the [repo:${userName}/${repositoryName}] wiki",
@@ -129,15 +120,15 @@ trait ActivityService {
       currentDate)
 
   def recordPushActivity(userName: String, repositoryName: String, activityUserName: String,
-      branchName: String, commits: List[JGitUtil.CommitInfo]): DBIO[Int] =
+                         branchName: String, commits: List[JGitUtil.CommitInfo]): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "push",
       s"[user:${activityUserName}] pushed to [branch:${userName}/${repositoryName}#${branchName}] at [repo:${userName}/${repositoryName}]",
       Some(commits.map { commit => commit.id + ":" + commit.shortMessage }.mkString("\n")),
       currentDate)
 
-  def recordCreateTagActivity(userName: String, repositoryName: String, activityUserName: String, 
-      tagName: String, commits: List[JGitUtil.CommitInfo]): DBIO[Int] =
+  def recordCreateTagActivity(userName: String, repositoryName: String, activityUserName: String,
+                              tagName: String, commits: List[JGitUtil.CommitInfo]): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "create_tag",
       s"[user:${activityUserName}] created tag [tag:${userName}/${repositoryName}#${tagName}] at [repo:${userName}/${repositoryName}]",
@@ -152,16 +143,14 @@ trait ActivityService {
       None,
       currentDate)
 
-  def recordCreateBranchActivity(userName: String, repositoryName: String, activityUserName: String, branchName: String)
-                                : DBIO[Int] =
+  def recordCreateBranchActivity(userName: String, repositoryName: String, activityUserName: String, branchName: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "create_branch",
       s"[user:${activityUserName}] created branch [branch:${userName}/${repositoryName}#${branchName}] at [repo:${userName}/${repositoryName}]",
       None,
       currentDate)
 
-  def recordDeleteBranchActivity(userName: String, repositoryName: String, activityUserName: String, branchName: String)
-                                : DBIO[Int] =
+  def recordDeleteBranchActivity(userName: String, repositoryName: String, activityUserName: String, branchName: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "delete_branch",
       s"[user:${activityUserName}] deleted branch ${branchName} at [repo:${userName}/${repositoryName}]",
@@ -175,16 +164,14 @@ trait ActivityService {
       None,
       currentDate)
 
-  def recordPullRequestActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String)
-                               : DBIO[Int] =
+  def recordPullRequestActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, title: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "open_pullreq",
       s"[user:${activityUserName}] opened pull request [pullreq:${userName}/${repositoryName}#${issueId}]",
       Some(title),
       currentDate)
 
-  def recordMergeActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, message: String)
-                         : DBIO[Int] =
+  def recordMergeActivity(userName: String, repositoryName: String, activityUserName: String, issueId: Int, message: String): DBIO[Int] =
     Activities += Activity(userName, repositoryName, activityUserName,
       "merge_pullreq",
       s"[user:${activityUserName}] merged pull request [pullreq:${userName}/${repositoryName}#${issueId}]",

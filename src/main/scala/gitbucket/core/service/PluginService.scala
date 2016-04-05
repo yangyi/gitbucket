@@ -1,8 +1,7 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.Plugin
-import gitbucket.core.model.Profile._
-import profile.api._
+import gitbucket.core.model.Profile._, profile.api._
 
 trait PluginService {
 

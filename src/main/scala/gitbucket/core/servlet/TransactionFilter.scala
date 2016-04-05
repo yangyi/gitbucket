@@ -4,8 +4,12 @@ import javax.servlet._
 import javax.servlet.http.HttpServletRequest
 import org.scalatra.ScalatraBase
 import org.slf4j.LoggerFactory
-import slick.jdbc.JdbcBackend.{Database => SlickDatabase, Session}
+import slick.dbio.DBIO
+import slick.jdbc.JdbcBackend.Database
 import gitbucket.core.util.Keys
+
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 /**
  * Controls the transaction with the open session in view pattern.
@@ -40,11 +44,24 @@ import gitbucket.core.util.Keys
 //
 //}
 
+// TODO
+trait DatabaseProvider {
+  implicit val db: Database = DatabaseProvider.db
+
+  /**
+   * Run the supplied Action and return the result synchronously.
+   * Note that this method is blocking, waiting until return the result.
+   * Be limited to use by batch (i.e. main or actor).
+   */
+  def withSession[A](f: => DBIO[A])(implicit db: Database): A = {
+    Await.result(db.run(f), Duration.Inf)
+  }
+
+}
+
 object DatabaseProvider {
 
-  private lazy val db: SlickDatabase = SlickDatabase.forConfig("db")
-
-  def apply(): SlickDatabase = db
+  private lazy val db: Database = Database.forConfig("db")
 
   def close(): Unit = db.close
 

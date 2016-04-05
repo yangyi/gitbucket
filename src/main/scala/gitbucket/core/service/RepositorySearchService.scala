@@ -9,16 +9,19 @@ import org.eclipse.jgit.revwalk.RevWalk
 import org.eclipse.jgit.treewalk.TreeWalk
 import org.eclipse.jgit.lib.FileMode
 import org.eclipse.jgit.api.Git
-import gitbucket.core.model.Profile._
-import profile.api._
+import gitbucket.core.model.Profile._, profile.api._
+
+import scala.concurrent.ExecutionContext
 
 trait RepositorySearchService { self: IssuesService =>
   import RepositorySearchService._
 
-  def countIssues(owner: String, repository: String, query: String): DBIO[Int] =
+  def countIssues(owner: String, repository: String, query: String)
+                 (implicit e: ExecutionContext): DBIO[Int] =
     searchIssuesByKeyword(owner, repository, query).map(_.length)
 
-  def searchIssues(owner: String, repository: String, query: String): DBIO[Seq[IssueSearchResult]] =
+  def searchIssues(owner: String, repository: String, query: String)
+                  (implicit e: ExecutionContext): DBIO[Seq[IssueSearchResult]] =
     searchIssuesByKeyword(owner, repository, query).map {
       _.map { case (issue, commentCount, content) =>
         IssueSearchResult(

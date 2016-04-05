@@ -1,8 +1,7 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.SshKey
-import gitbucket.core.model.Profile._
-import profile.api._
+import gitbucket.core.model.Profile._, profile.api._
 
 trait SshKeyService {
 
@@ -12,7 +11,7 @@ trait SshKeyService {
   def getPublicKeys(userName: String)(implicit s: Session): DBIO[Seq[SshKey]] =
     SshKeys.filter(_.userName === userName.bind).sortBy(_.sshKeyId).result
 
-  def deletePublicKey(userName: String, sshKeyId: Int)(implicit s: Session): DBIO[Int] =
+  def deletePublicKey(userName: String, sshKeyId: Int): DBIO[Int] =
     SshKeys filter (_.byPrimaryKey(userName, sshKeyId)) delete
 
 }

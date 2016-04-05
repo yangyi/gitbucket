@@ -1,8 +1,7 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.Label
-import gitbucket.core.model.Profile._
-import profile.api._
+import gitbucket.core.model.Profile._, profile.api._
 
 trait LabelsService {
 
@@ -23,11 +22,10 @@ trait LabelsService {
       color          = color
     )
 
-  def updateLabel(owner: String, repository: String, labelId: Int, labelName: String, color: String)
-                 : DBIO[Int] =
+  def updateLabel(owner: String, repository: String, labelId: Int, labelName: String, color: String): DBIO[Int] =
     Labels.filter(_.byPrimaryKey(owner, repository, labelId))
-          .map(t => t.labelName -> t.color)
-          .update(labelName, color)
+      .map(t => t.labelName -> t.color)
+      .update(labelName, color)
 
   def deleteLabel(owner: String, repository: String, labelId: Int): DBIO[Unit] = DBIO.seq(
     IssueLabels.filter(_.byLabel(owner, repository, labelId)).delete,

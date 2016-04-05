@@ -1,18 +1,20 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.{GroupMember, Account}
-import gitbucket.core.model.Profile._
+import gitbucket.core.model.Profile._, profile.api._
 import gitbucket.core.util.{StringUtil, LDAPUtil}
 import gitbucket.core.service.SystemSettingsService.SystemSettings
-import profile.api._
 import StringUtil._
 import org.slf4j.LoggerFactory
+import scala.concurrent.ExecutionContext
+import scalaz.OptionT
 
 trait AccountService {
 
   private val logger = LoggerFactory.getLogger(classOf[AccountService])
 
-  def authenticate(settings: SystemSettings, userName: String, password: String): DBIO[Option[Account]] =
+  def authenticate(settings: SystemSettings, userName: String, password: String)
+                  (implicit e: ExecutionContext): DBIO[Option[Account]] =
     if(settings.ldapAuthentication){
       ldapAuthentication(settings, userName, password)
     } else {
@@ -22,16 +24,18 @@ trait AccountService {
   /**
    * Authenticate by internal database.
    */
-  private def defaultAuthentication(userName: String, password: String) = {
-    getAccountByUserName(userName).map { _ filter {
-      x => !x.isGroupAccount && x.password == sha1(password)
-    }}
+  private def defaultAuthentication(userName: String, password: String)
+                                   (implicit e: ExecutionContext) = {
+    OptionT.optionT[DBIO](getAccountByUserName(userName))
+      .filter(x => !x.isGroupAccount && x.password == sha1(password))
+      .run
   }
 
   /**
    * Authenticate by LDAP.
    */
-  private def ldapAuthentication(settings: SystemSettings, userName: String, password: String) = {
+  private def ldapAuthentication(settings: SystemSettings, userName: String, password: String)
+                                (implicit e: ExecutionContext) = {
     LDAPUtil.authenticate(settings.ldap.get, userName, password) match {
       case Right(ldapUserInfo) => {
         // Create or update account by LDAP information
@@ -72,14 +76,15 @@ trait AccountService {
   }
 
   def getAccountByUserName(userName: String, includeRemoved: Boolean = false): DBIO[Option[Account]] =
-    Accounts filter(t => (t.userName === userName.bind) && (t.removed === false.bind, !includeRemoved)) result headOption
+    Accounts.filter(t => (t.userName === userName.bind) && (t.removed === false.bind, !includeRemoved)).result.headOption
 
-  def getAccountsByUserNames(userNames: Set[String], knowns:Set[Account], includeRemoved: Boolean = false): DBIO[Map[String, Account]] = {
+  def getAccountsByUserNames(userNames: Set[String], knowns:Set[Account], includeRemoved: Boolean = false)
+                            (implicit e: ExecutionContext): DBIO[Map[String, Account]] = {
     val map = knowns.map(a => a.userName -> a).toMap
     val needs = userNames -- map.keySet
     if(needs.isEmpty){
       DBIO.successful(map)
-    }else{
+    } else {
       Accounts
         .filter(t => (t.userName inSetBind needs) && (t.removed === false.bind, !includeRemoved))
         .map(t => t.userName -> t)
@@ -89,7 +94,7 @@ trait AccountService {
   }
 
   def getAccountByMailAddress(mailAddress: String, includeRemoved: Boolean = false): DBIO[Option[Account]] =
-    Accounts filter(t => (t.mailAddress.toLowerCase === mailAddress.toLowerCase.bind) && (t.removed === false.bind, !includeRemoved)) result headOption
+    Accounts.filter(t => (t.mailAddress.toLowerCase === mailAddress.toLowerCase.bind) && (t.removed === false.bind, !includeRemoved)).result.headOption
 
   def getAllUsers(includeRemoved: Boolean = true): DBIO[Seq[Account]] =
     if(includeRemoved){
@@ -98,8 +103,7 @@ trait AccountService {
       Accounts filter (_.removed === false.bind) sortBy(_.userName) result
     }
 
-  def createAccount(userName: String, password: String, fullName: String, mailAddress: String, isAdmin: Boolean, url: Option[String])
-                   : DBIO[Int] =
+  def createAccount(userName: String, password: String, fullName: String, mailAddress: String, isAdmin: Boolean, url: Option[String]): DBIO[Int] =
     Accounts += Account(
       userName       = userName,
       password       = password,
@@ -153,14 +157,13 @@ trait AccountService {
   def updateGroup(groupName: String, url: Option[String], removed: Boolean): DBIO[Int] =
     Accounts.filter(_.userName === groupName.bind).map(t => t.url.? -> t.removed).update(url, removed)
 
-  def updateGroupMembers(groupName: String, members: List[(String, Boolean)]): DBIO[Unit] = DBIO.seq(
-    (
-      GroupMembers.filter(_.groupName === groupName.bind).delete +:
+  def updateGroupMembers(groupName: String, members: List[(String, Boolean)]): DBIO[Unit] =
+    GroupMembers.filter(_.groupName === groupName.bind).delete >>
+    DBIO.seq(
       members.map { case (userName, isManager) =>
         GroupMembers += GroupMember (groupName, userName, isManager)
-      }
-    ): _*
-  )
+      }: _*
+    )
 
   def getGroupMembers(groupName: String): DBIO[Seq[GroupMember]] =
     GroupMembers
@@ -181,7 +184,8 @@ trait AccountService {
     Repositories.filter(_.userName === userName.bind).delete
   )
 
-  def getGroupNames(userName: String): DBIO[Seq[String]] = {
+  def getGroupNames(userName: String)
+                   (implicit e: ExecutionContext): DBIO[Seq[String]] = {
     Collaborators
       .filter(_.collaboratorName === userName.bind)
       .sortBy(_.userName)

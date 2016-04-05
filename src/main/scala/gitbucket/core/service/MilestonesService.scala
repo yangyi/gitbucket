@@ -1,8 +1,9 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.Milestone
-import gitbucket.core.model.Profile._
-import profile.api._
+import gitbucket.core.model.Profile._, profile.api._
+
+import scala.concurrent.ExecutionContext
 
 trait MilestonesService {
 
@@ -37,11 +38,12 @@ trait MilestonesService {
   def getMilestone(owner: String, repository: String, milestoneId: Int): DBIO[Option[Milestone]] =
     Milestones.filter(_.byPrimaryKey(owner, repository, milestoneId)).result.headOption
 
-  def getMilestonesWithIssueCount(owner: String, repository: String): DBIO[Seq[(Milestone, Int, Int)]] = {
+  def getMilestonesWithIssueCount(owner: String, repository: String)
+                                 (implicit e: ExecutionContext): DBIO[Seq[(Milestone, Int, Int)]] = {
     for {
       milestones <- getMilestones(owner, repository)
       q <- Issues
-        .filter  { t => (t.byRepository(owner, repository)) && (t.milestoneId.? isDefined) }
+        .filter  { t => t.byRepository(owner, repository) && t.milestoneId.? isDefined }
         .groupBy { t => t.milestoneId -> t.closed }
         .map     { case (t1, t2) => t1._1 -> t1._2 -> t2.length }
         .result
