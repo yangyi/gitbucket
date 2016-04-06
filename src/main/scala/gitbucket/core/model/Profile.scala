@@ -4,6 +4,7 @@ package gitbucket.core.model
 trait Profile {
   val profile: slick.driver.JdbcProfile
   import profile.api._
+  import scalaz._
 
   /**
    * java.util.Date Mapped Column Types
@@ -12,6 +13,14 @@ trait Profile {
     d => new java.sql.Timestamp(d.getTime),
     t => new java.util.Date(t.getTime)
   )
+
+  /**
+   * A Monad instance for DBIO
+   */
+  implicit val dbioMonad = new Functor[DBIO] with Monad[DBIO] {
+    def point[A](a: => A) = DBIO.successful(a)
+    def bind[A, B](fa: DBIO[A])(f: A => DBIO[B]) = fa.flatMap(f)
+  }
 
   /**
    * Extends Column to add conditional condition

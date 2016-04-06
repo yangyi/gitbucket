@@ -1,7 +1,7 @@
 package gitbucket.core.controller
 
 import gitbucket.core.api.ApiError
-import gitbucket.core.model.Account
+import gitbucket.core.model.{Account, DatabaseProvider}
 import gitbucket.core.service.{AccountService, SystemSettingsService}
 import gitbucket.core.util.ControlUtil._
 import gitbucket.core.util.Directory._
@@ -26,7 +26,7 @@ import scala.util.Try
  */
 abstract class ControllerBase extends ScalatraFilter
   with ClientSideValidationFormSupport with JacksonJsonSupport with I18nSupport with FlashMapSupport with Validations
-  with SystemSettingsService {
+  with DatabaseProvider with SystemSettingsService {
 
   implicit val jsonFormats = gitbucket.core.api.JsonFormat.jsonFormats
 
