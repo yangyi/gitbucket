@@ -6,6 +6,8 @@ import scala.concurrent.ExecutionContext
 import scalaz.OptionT
 
 trait CommitStatusService {
+  import gitbucket.core.model.Profile.dateColumnType
+
   /** insert or update */
   def createCommitStatus(userName: String, repositoryName: String, sha:String, context:String, state:CommitState,
                          targetUrl:Option[String], description:Option[String], now:java.util.Date, creator:Account)

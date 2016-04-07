@@ -10,6 +10,7 @@ import scala.concurrent.ExecutionContext
 import scalaz.OptionT
 
 trait AccountService {
+  import gitbucket.core.model.Profile.dateColumnType
 
   private val logger = LoggerFactory.getLogger(classOf[AccountService])
 

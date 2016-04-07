@@ -9,6 +9,7 @@ import scala.concurrent.ExecutionContext
 import scalaz.OptionT
 
 trait IssuesService {
+  import gitbucket.core.model.Profile.dateColumnType
   import IssuesService._
 
   def getIssue(owner: String, repository: String, issueId: String): DBIO[Option[Issue]] =

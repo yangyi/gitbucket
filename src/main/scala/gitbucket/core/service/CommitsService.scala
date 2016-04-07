@@ -5,6 +5,7 @@ import gitbucket.core.model.Profile._, profile.api._
 
 
 trait CommitsService {
+  import gitbucket.core.model.Profile.dateColumnType
 
   def getCommitComments(owner: String, repository: String, commitId: String, includePullRequest: Boolean): DBIO[Seq[CommitComment]] =
     CommitComments filter {
