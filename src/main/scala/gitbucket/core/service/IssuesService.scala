@@ -6,7 +6,7 @@ import gitbucket.core.util.StringUtil._
 import gitbucket.core.util.Implicits._
 import gitbucket.core.model._
 import scala.concurrent.ExecutionContext
-import scalaz.OptionT
+import scalaz.{Monad, OptionT}
 
 trait IssuesService {
   import gitbucket.core.model.Profile.dateColumnType
@@ -15,7 +15,7 @@ trait IssuesService {
   def getIssue(owner: String, repository: String, issueId: String): DBIO[Option[Issue]] =
     if (issueId forall (_.isDigit))
       Issues.filter(_.byPrimaryKey(owner, repository, issueId.toInt)).result.headOption
-    else DBIO successful None
+    else Monad[DBIO].point(None)
 
   def getComments(owner: String, repository: String, issueId: Int): DBIO[Seq[IssueComment]] =
     IssueComments filter (_.byIssue(owner, repository, issueId)) result
@@ -34,7 +34,7 @@ trait IssuesService {
       IssueComments.filter { t =>
         t.byPrimaryKey(commentId.toInt) && t.byRepository(owner, repository)
       }.result.headOption
-    else DBIO successful None
+    else Monad[DBIO].point(None)
 
   def getIssueLabels(owner: String, repository: String, issueId: Int): DBIO[Seq[Label]] =
     IssueLabels
@@ -200,7 +200,7 @@ trait IssuesService {
           case "comments" => t2.commentCount
           case "updated"  => t1.updatedDate
         }) match {
-          case sort => condition.direction match {
+          case sort: slick.lifted.ColumnOrdered[_] => condition.direction match {
             case "asc"  => sort asc
             case "desc" => sort desc
           }
@@ -275,7 +275,7 @@ trait IssuesService {
           .filter (_.byPrimaryKey(owner, repository))
           .map (_.issueId)
           .update (id) >>
-        DBIO.successful(id)
+        Monad[DBIO].point(id)
     }
   }
 

@@ -7,7 +7,7 @@ import gitbucket.core.service.SystemSettingsService.SystemSettings
 import StringUtil._
 import org.slf4j.LoggerFactory
 import scala.concurrent.ExecutionContext
-import scalaz.OptionT
+import scalaz.{Monad, OptionT}
 
 trait AccountService {
   import gitbucket.core.model.Profile.dateColumnType
@@ -84,7 +84,7 @@ trait AccountService {
     val map = knowns.map(a => a.userName -> a).toMap
     val needs = userNames -- map.keySet
     if(needs.isEmpty){
-      DBIO.successful(map)
+      Monad[DBIO].point(map)
     } else {
       Accounts
         .filter(t => (t.userName inSetBind needs) && (t.removed === false.bind, !includeRemoved))
@@ -179,7 +179,7 @@ trait AccountService {
       .map(_.groupName)
       .result
 
-  def removeUserRelatedData(userName: String): Unit = DBIO.seq(
+  def removeUserRelatedData(userName: String): DBIO[Unit] = DBIO.seq(
     GroupMembers.filter(_.userName === userName.bind).delete,
     Collaborators.filter(_.collaboratorName === userName.bind).delete,
     Repositories.filter(_.userName === userName.bind).delete

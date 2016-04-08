@@ -1,46 +1,48 @@
 package gitbucket.core.service
 
 import gitbucket.core.model.{Collaborator, Repository, Account}
-//import gitbucket.core.model.Profile._
+import gitbucket.core.model.Profile._, profile.api._
 import gitbucket.core.util.JGitUtil
-//import profile.simple._
 
-//// TODO [Slick3]Move to DBIO
-//trait RepositoryService { self: AccountService =>
-//  import RepositoryService._
-//
-//  /**
-//   * Creates a new repository.
-//   *
-//   * @param repositoryName the repository name
-//   * @param userName the user name of the repository owner
-//   * @param description the repository description
-//   * @param isPrivate the repository type (private is true, otherwise false)
-//   * @param originRepositoryName specify for the forked repository. (default is None)
-//   * @param originUserName specify for the forked repository. (default is None)
-//   */
-//  def createRepository(repositoryName: String, userName: String, description: Option[String], isPrivate: Boolean,
-//                       originRepositoryName: Option[String] = None, originUserName: Option[String] = None,
-//                       parentRepositoryName: Option[String] = None, parentUserName: Option[String] = None)
-//                      (implicit s: Session): Unit = {
-//    Repositories insert
-//      Repository(
-//        userName             = userName,
-//        repositoryName       = repositoryName,
-//        isPrivate            = isPrivate,
-//        description          = description,
-//        defaultBranch        = "master",
-//        registeredDate       = currentDate,
-//        updatedDate          = currentDate,
-//        lastActivityDate     = currentDate,
-//        originUserName       = originUserName,
-//        originRepositoryName = originRepositoryName,
-//        parentUserName       = parentUserName,
-//        parentRepositoryName = parentRepositoryName)
-//
-//    IssueId insert (userName, repositoryName, 0)
-//  }
-//
+import scala.concurrent.ExecutionContext
+import scalaz.{Monad, OptionT}
+
+// TODO [Slick3]Move to DBIO
+trait RepositoryService { self: AccountService =>
+  import gitbucket.core.model.Profile.dateColumnType
+  import RepositoryService._
+
+  /**
+   * Creates a new repository.
+   *
+   * @param repositoryName the repository name
+   * @param userName the user name of the repository owner
+   * @param description the repository description
+   * @param isPrivate the repository type (private is true, otherwise false)
+   * @param originRepositoryName specify for the forked repository. (default is None)
+   * @param originUserName specify for the forked repository. (default is None)
+   */
+  def createRepository(repositoryName: String, userName: String, description: Option[String], isPrivate: Boolean,
+                       originRepositoryName: Option[String] = None, originUserName: Option[String] = None,
+                       parentRepositoryName: Option[String] = None, parentUserName: Option[String] = None): DBIO[Int] = {
+    (Repositories +=
+      Repository(
+        userName             = userName,
+        repositoryName       = repositoryName,
+        isPrivate            = isPrivate,
+        description          = description,
+        defaultBranch        = "master",
+        registeredDate       = currentDate,
+        updatedDate          = currentDate,
+        lastActivityDate     = currentDate,
+        originUserName       = originUserName,
+        originRepositoryName = originRepositoryName,
+        parentUserName       = parentUserName,
+        parentRepositoryName = parentRepositoryName)
+    ) >>
+      (IssueId += (userName, repositoryName, 0))
+  }
+
 //  def renameRepository(oldUserName: String, oldRepositoryName: String, newUserName: String, newRepositoryName: String)
 //                      (implicit s: Session): Unit = {
 //    getAccountByUserName(newUserName).foreach { account =>
@@ -180,61 +182,68 @@ import gitbucket.core.util.JGitUtil
 //          .update(None, None)
 //      }
 //  }
-//
-//  /**
-//   * Returns the repository names of the specified user.
-//   *
-//   * @param userName the user name of repository owner
-//   * @return the list of repository names
-//   */
-//  def getRepositoryNamesOfUser(userName: String)(implicit s: Session): List[String] =
-//    Repositories filter(_.userName === userName.bind) map (_.repositoryName) list
-//
-//  /**
-//   * Returns the specified repository information.
-//   *
-//   * @param userName the user name of the repository owner
-//   * @param repositoryName the repository name
-//   * @param baseUrl the base url of this application
-//   * @return the repository information
-//   */
-//  def getRepository(userName: String, repositoryName: String, baseUrl: String)(implicit s: Session): DBIO[Option[RepositoryInfo]] = {
-//    (Repositories filter { t => t.byRepository(userName, repositoryName) } firstOption) map { repository =>
-//      // for getting issue count and pull request count
-//      val issues = Issues.filter { t =>
-//        t.byRepository(repository.userName, repository.repositoryName) && (t.closed === false.bind)
-//      }.map(_.pullRequest).list
-//
-//      new RepositoryInfo(
-//        JGitUtil.getRepositoryInfo(repository.userName, repository.repositoryName, baseUrl),
-//        repository,
-//        issues.count(_ == false),
-//        issues.count(_ == true),
-//        getForkedCount(
-//          repository.originUserName.getOrElse(repository.userName),
-//          repository.originRepositoryName.getOrElse(repository.repositoryName)
-//        ),
-//        getRepositoryManagers(repository.userName))
-//    }
-//  }
-//
-//  /**
-//   * Returns the repositories without private repository that user does not have access right.
-//   * Include public repository, private own repository and private but collaborator repository.
-//   *
-//   * @param userName the user name of collaborator
-//   * @return the repository infomation list
-//   */
-//  def getAllRepositories(userName: String)(implicit s: Session): List[(String, String)] = {
-//    Repositories.filter { t1 =>
-//      (t1.isPrivate === false.bind) ||
-//      (t1.userName  === userName.bind) ||
-//      (Collaborators.filter { t2 => t2.byRepository(t1.userName, t1.repositoryName) && (t2.collaboratorName === userName.bind)} exists)
-//    }.sortBy(_.lastActivityDate desc).map{ t =>
-//      (t.userName, t.repositoryName)
-//    }.list
-//  }
-//
+
+  /**
+   * Returns the repository names of the specified user.
+   *
+   * @param userName the user name of repository owner
+   * @return the list of repository names
+   */
+  def getRepositoryNamesOfUser(userName: String): DBIO[Seq[String]] =
+    Repositories filter(_.userName === userName.bind) map (_.repositoryName) result
+
+  /**
+   * Returns the specified repository information.
+   *
+   * @param userName the user name of the repository owner
+   * @param repositoryName the repository name
+   * @param baseUrl the base url of this application
+   * @return the repository information
+   */
+  def getRepository(userName: String, repositoryName: String, baseUrl: String)
+                   (implicit e: ExecutionContext): DBIO[Option[RepositoryInfo]] = {
+    (for {
+      repository <- OptionT.optionT[DBIO](Repositories.filter { t => t.byRepository(userName, repositoryName) }.result.headOption)
+
+      // for getting issue count and pull request count
+      (issueCount, pullCount) <- OptionT.optionT[DBIO](Issues.filter { t =>
+        t.byRepository(repository.userName, repository.repositoryName) && (t.closed === false.bind)
+      }.map(_.pullRequest).result.map { issues =>
+        Some(issues.count(_ == false) -> issues.count(_ == true))
+      })
+      forkedCount <- OptionT.optionT[DBIO](getForkedCount(
+        repository.originUserName.getOrElse(repository.userName),
+        repository.originRepositoryName.getOrElse(repository.repositoryName)
+      ))
+      managers <- OptionT.optionT[DBIO](getRepositoryManagers(repository.userName))
+
+    } yield new RepositoryInfo(
+      JGitUtil.getRepositoryInfo(repository.userName, repository.repositoryName, baseUrl),
+      repository,
+      issueCount,
+      pullCount,
+      forkedCount,
+      managers
+    )).run
+  }
+
+  /**
+   * Returns the repositories without private repository that user does not have access right.
+   * Include public repository, private own repository and private but collaborator repository.
+   *
+   * @param userName the user name of collaborator
+   * @return the repository infomation list
+   */
+  def getAllRepositories(userName: String): DBIO[Seq[(String, String)]] = {
+    Repositories.filter { t1 =>
+      (t1.isPrivate === false.bind) ||
+      (t1.userName  === userName.bind) ||
+      (Collaborators.filter { t2 => t2.byRepository(t1.userName, t1.repositoryName) && (t2.collaboratorName === userName.bind)} exists)
+    }.sortBy(_.lastActivityDate desc).map{ t =>
+      (t.userName, t.repositoryName)
+    }.result
+  }
+
 //  def getUserRepositories(userName: String, baseUrl: String, withoutPhysicalInfo: Boolean = false)
 //                         (implicit s: Session): List[RepositoryInfo] = {
 //    Repositories.filter { t1 =>
@@ -297,96 +306,105 @@ import gitbucket.core.util.JGitUtil
 //        getRepositoryManagers(repository.userName))
 //    }
 //  }
-//
-//  private def getRepositoryManagers(userName: String)(implicit s: Session): Seq[String] =
-//    if(getAccountByUserName(userName).exists(_.isGroupAccount)){
-//      getGroupMembers(userName).collect { case x if(x.isManager) => x.userName }
-//    } else {
-//      Seq(userName)
-//    }
-//
-//  /**
-//   * Updates the last activity date of the repository.
-//   */
-//  def updateLastActivityDate(userName: String, repositoryName: String)(implicit s: Session): Unit =
-//    Repositories.filter(_.byRepository(userName, repositoryName)).map(_.lastActivityDate).update(currentDate)
-//
-//  /**
-//   * Save repository options.
-//   */
-//  def saveRepositoryOptions(userName: String, repositoryName: String,
-//      description: Option[String], isPrivate: Boolean)(implicit s: Session): Unit =
-//    Repositories.filter(_.byRepository(userName, repositoryName))
-//      .map { r => (r.description.?, r.isPrivate, r.updatedDate) }
-//      .update (description, isPrivate, currentDate)
-//
-//  def saveRepositoryDefaultBranch(userName: String, repositoryName: String,
-//      defaultBranch: String)(implicit s: Session): Unit =
-//    Repositories.filter(_.byRepository(userName, repositoryName))
-//      .map { r => r.defaultBranch }
-//      .update (defaultBranch)
-//
-//  /**
-//   * Add collaborator to the repository.
-//   *
-//   * @param userName the user name of the repository owner
-//   * @param repositoryName the repository name
-//   * @param collaboratorName the collaborator name
-//   */
-//  def addCollaborator(userName: String, repositoryName: String, collaboratorName: String)(implicit s: Session): Unit =
-//    Collaborators insert Collaborator(userName, repositoryName, collaboratorName)
-//
-//  /**
-//   * Remove collaborator from the repository.
-//   *
-//   * @param userName the user name of the repository owner
-//   * @param repositoryName the repository name
-//   * @param collaboratorName the collaborator name
-//   */
-//  def removeCollaborator(userName: String, repositoryName: String, collaboratorName: String)(implicit s: Session): Unit =
-//    Collaborators.filter(_.byPrimaryKey(userName, repositoryName, collaboratorName)).delete
-//
-//  /**
-//   * Remove all collaborators from the repository.
-//   *
-//   * @param userName the user name of the repository owner
-//   * @param repositoryName the repository name
-//   */
-//  def removeCollaborators(userName: String, repositoryName: String)(implicit s: Session): Unit =
-//    Collaborators.filter(_.byRepository(userName, repositoryName)).delete
-//
-//  /**
-//   * Returns the list of collaborators name which is sorted with ascending order.
-//   *
-//   * @param userName the user name of the repository owner
-//   * @param repositoryName the repository name
-//   * @return the list of collaborators name
-//   */
-//  def getCollaborators(userName: String, repositoryName: String)(implicit s: Session): List[String] =
-//    Collaborators.filter(_.byRepository(userName, repositoryName)).sortBy(_.collaboratorName).map(_.collaboratorName).list
-//
-//  def hasWritePermission(owner: String, repository: String, loginAccount: Option[Account])(implicit s: Session): Boolean = {
-//    loginAccount match {
-//      case Some(a) if(a.isAdmin) => true
-//      case Some(a) if(a.userName == owner) => true
-//      case Some(a) if(getCollaborators(owner, repository).contains(a.userName)) => true
-//      case _ => false
-//    }
-//  }
-//
-//  private def getForkedCount(userName: String, repositoryName: String)(implicit s: Session): Int =
-//    Query(Repositories.filter { t =>
-//      (t.originUserName === userName.bind) && (t.originRepositoryName === repositoryName.bind)
-//    }.length).first
-//
-//
-//  def getForkedRepositories(userName: String, repositoryName: String)(implicit s: Session): List[(String, String)] =
-//    Repositories.filter { t =>
-//      (t.originUserName === userName.bind) && (t.originRepositoryName === repositoryName.bind)
-//    }
-//    .sortBy(_.userName asc).map(t => t.userName -> t.repositoryName).list
-//
-//}
+
+  private def getRepositoryManagers(userName: String)(implicit e: ExecutionContext): DBIO[Option[Seq[String]]] = {
+    OptionT.optionT[DBIO](getAccountByUserName(userName))
+      .filter(_.isGroupAccount)
+      .flatMapF { _ =>
+        getGroupMembers(userName).map { members =>
+          Some(members.collect {
+            case x if x.isManager => x.userName
+          })
+        }
+      }.getOrElse {
+        Some(Seq(userName))
+      }
+  }
+
+  /**
+   * Updates the last activity date of the repository.
+   */
+  def updateLastActivityDate(userName: String, repositoryName: String): DBIO[Int] =
+    Repositories.filter(_.byRepository(userName, repositoryName)).map(_.lastActivityDate).update(currentDate)
+
+  /**
+   * Save repository options.
+   */
+  def saveRepositoryOptions(userName: String, repositoryName: String,
+      description: Option[String], isPrivate: Boolean): DBIO[Int] =
+    Repositories.filter(_.byRepository(userName, repositoryName))
+      .map { r => (r.description.?, r.isPrivate, r.updatedDate) }
+      .update (description, isPrivate, currentDate)
+
+  def saveRepositoryDefaultBranch(userName: String, repositoryName: String,
+      defaultBranch: String): DBIO[Int] =
+    Repositories.filter(_.byRepository(userName, repositoryName))
+      .map { r => r.defaultBranch }
+      .update (defaultBranch)
+
+  /**
+   * Add collaborator to the repository.
+   *
+   * @param userName the user name of the repository owner
+   * @param repositoryName the repository name
+   * @param collaboratorName the collaborator name
+   */
+  def addCollaborator(userName: String, repositoryName: String, collaboratorName: String): DBIO[Int] =
+    Collaborators += Collaborator(userName, repositoryName, collaboratorName)
+
+  /**
+   * Remove collaborator from the repository.
+   *
+   * @param userName the user name of the repository owner
+   * @param repositoryName the repository name
+   * @param collaboratorName the collaborator name
+   */
+  def removeCollaborator(userName: String, repositoryName: String, collaboratorName: String): DBIO[Int] =
+    Collaborators.filter(_.byPrimaryKey(userName, repositoryName, collaboratorName)).delete
+
+  /**
+   * Remove all collaborators from the repository.
+   *
+   * @param userName the user name of the repository owner
+   * @param repositoryName the repository name
+   */
+  def removeCollaborators(userName: String, repositoryName: String): DBIO[Int] =
+    Collaborators.filter(_.byRepository(userName, repositoryName)).delete
+
+  /**
+   * Returns the list of collaborators name which is sorted with ascending order.
+   *
+   * @param userName the user name of the repository owner
+   * @param repositoryName the repository name
+   * @return the list of collaborators name
+   */
+  def getCollaborators(userName: String, repositoryName: String): DBIO[Seq[String]] =
+    Collaborators.filter(_.byRepository(userName, repositoryName)).sortBy(_.collaboratorName).map(_.collaboratorName).result
+
+  def hasWritePermission(owner: String, repository: String, loginAccount: Option[Account])
+                        (implicit e: ExecutionContext): DBIO[Boolean] = {
+    loginAccount match {
+      case None => Monad[DBIO].point(false)
+      case Some(a) if a.isAdmin => Monad[DBIO].point(true)
+      case Some(a) if a.userName == owner => Monad[DBIO].point(true)
+      case Some(a) => getCollaborators(owner, repository).map(_.contains(a.userName))
+    }
+  }
+
+  private def getForkedCount(userName: String, repositoryName: String): DBIO[Option[Int]] =
+    Query(Repositories.filter { t =>
+      (t.originUserName === userName.bind) && (t.originRepositoryName === repositoryName.bind)
+    }.length).result.headOption
+
+
+  def getForkedRepositories(userName: String, repositoryName: String): DBIO[Seq[(String, String)]] =
+    Repositories.filter { t =>
+      (t.originUserName === userName.bind) && (t.originRepositoryName === repositoryName.bind)
+    }
+    .sortBy(_.userName asc).map(t => t.userName -> t.repositoryName)
+    .result
+
+}
 
 object RepositoryService {
 

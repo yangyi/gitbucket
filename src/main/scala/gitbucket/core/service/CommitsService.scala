@@ -2,6 +2,7 @@ package gitbucket.core.service
 
 import gitbucket.core.model.CommitComment
 import gitbucket.core.model.Profile._, profile.api._
+import scalaz.Monad
 
 
 trait CommitsService {
@@ -18,7 +19,7 @@ trait CommitsService {
         t.byPrimaryKey(commentId.toInt) && t.byRepository(owner, repository)
       }.result.headOption
     else
-      DBIO successful None
+      Monad[DBIO].point(None)
 
   def createCommitComment(owner: String, repository: String, commitId: String, loginUser: String,
                           content: String, fileName: Option[String], oldLine: Option[Int], newLine: Option[Int], issueId: Option[Int]): DBIO[Int] =

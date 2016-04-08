@@ -6,6 +6,7 @@ import gitbucket.core.model.Profile._, profile.api._
 import scala.concurrent.ExecutionContext
 
 trait MilestonesService {
+  import gitbucket.core.model.Profile.dateColumnType
 
   def createMilestone(owner: String, repository: String, title: String, description: Option[String],
                       dueDate: Option[java.util.Date]): DBIO[Int] =
@@ -43,7 +44,7 @@ trait MilestonesService {
     for {
       milestones <- getMilestones(owner, repository)
       q <- Issues
-        .filter  { t => t.byRepository(owner, repository) && t.milestoneId.? isDefined }
+        .filter  { t => t.byRepository(owner, repository) && t.milestoneId.?.isDefined }
         .groupBy { t => t.milestoneId -> t.closed }
         .map     { case (t1, t2) => t1._1 -> t1._2 -> t2.length }
         .result

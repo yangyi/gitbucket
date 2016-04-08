@@ -4,7 +4,7 @@ import gitbucket.core.model.{Issue, PullRequest, CommitStatus, CommitState}
 import gitbucket.core.model.Profile._, profile.api._
 import gitbucket.core.util.JGitUtil
 import scala.concurrent.ExecutionContext
-import scalaz.OptionT
+import scalaz.{Monad, OptionT}
 
 trait PullRequestService { self: IssuesService =>
   import PullRequestService._
@@ -98,14 +98,14 @@ trait PullRequestService { self: IssuesService =>
               x.userName, x.repositoryName, x.branch, x.issueId,
               x.requestUserName, x.requestRepositoryName, x.requestBranch)
             updateCommitId(x.userName, x.repositoryName, x.issueId, commitIdTo, commitIdFrom)
-          case false => DBIO successful ()
+          case false => Monad[DBIO].point(())
         }
       }: _*)
     }
 
   def getPullRequestByRequestCommit(userName: String, repositoryName: String, toBranch:String, fromBranch: String, commitId: String): DBIO[Option[(PullRequest, Issue)]] = {
     if(toBranch == fromBranch){
-      DBIO.successful(None)
+      Monad[DBIO].point(None)
     } else {
       PullRequests
         .join(Issues).on { (t1, t2) => t1.byPrimaryKey(t2.userName, t2.repositoryName, t2.issueId) }
