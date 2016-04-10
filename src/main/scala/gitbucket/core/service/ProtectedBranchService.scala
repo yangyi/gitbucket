@@ -50,11 +50,12 @@ trait ProtectedBranchService {
 }
 
 // TODO [Slick3]Move to DBIO
-//object ProtectedBranchService {
-//
-//  class ProtectedBranchReceiveHook extends ReceiveHook with ProtectedBranchService {
-//    override def preReceive(owner: String, repository: String, receivePack: ReceivePack, command: ReceiveCommand, pusher: String)
-//                           (implicit session: Session): Option[String] = {
+object ProtectedBranchService {
+
+  class ProtectedBranchReceiveHook extends ReceiveHook with ProtectedBranchService {
+    override def preReceive(owner: String, repository: String, receivePack: ReceivePack, command: ReceiveCommand, pusher: String)
+                           (implicit ec: ExecutionContext, db: slick.jdbc.JdbcBackend.Database): Option[String] = ???
+//    {
 //      val branch = command.getRefName.stripPrefix("refs/heads/")
 //      if(branch != command.getRefName){
 //        getProtectedBranchInfo(owner, repository, branch).getStopReason(receivePack.isAllowNonFastForwards, command, pusher)
@@ -62,67 +63,71 @@ trait ProtectedBranchService {
 //        None
 //      }
 //    }
-//  }
-//
-//
-//  case class ProtectedBranchInfo(
-//    owner: String,
-//    repository: String,
-//    enabled: Boolean,
-//    /**
-//     * Require status checks to pass before merging
-//     * Choose which status checks must pass before branches can be merged into test.
-//     * When enabled, commits must first be pushed to another branch,
-//     * then merged or pushed directly to test after status checks have passed.
-//     */
-//    contexts: Seq[String],
-//    /**
-//     * Include administrators
-//     * Enforce required status checks for repository administrators.
-//     */
-//    includeAdministrators: Boolean) extends AccountService with CommitStatusService {
-//
-//    def isAdministrator(pusher: String)(implicit session: Session): Boolean =
+  }
+
+
+  case class ProtectedBranchInfo(
+    owner: String,
+    repository: String,
+    enabled: Boolean,
+    /**
+     * Require status checks to pass before merging
+     * Choose which status checks must pass before branches can be merged into test.
+     * When enabled, commits must first be pushed to another branch,
+     * then merged or pushed directly to test after status checks have passed.
+     */
+    contexts: Seq[String],
+    /**
+     * Include administrators
+     * Enforce required status checks for repository administrators.
+     */
+    includeAdministrators: Boolean) extends AccountService with CommitStatusService {
+
+    def isAdministrator(pusher: String)(implicit session: Session): Boolean = ???
 //      pusher == owner || getGroupMembers(owner).filter(gm => gm.userName == pusher && gm.isManager).nonEmpty
-//
-//    /**
-//     * Can't be force pushed
-//     * Can't be deleted
-//     * Can't have changes merged into them until required status checks pass
-//     */
-//    def getStopReason(isAllowNonFastForwards: Boolean, command: ReceiveCommand, pusher: String)(implicit session: Session): Option[String] = {
-//      if(enabled){
-//        command.getType() match {
-//          case ReceiveCommand.Type.UPDATE|ReceiveCommand.Type.UPDATE_NONFASTFORWARD if isAllowNonFastForwards =>
-//            Some("Cannot force-push to a protected branch")
-//          case ReceiveCommand.Type.UPDATE|ReceiveCommand.Type.UPDATE_NONFASTFORWARD if needStatusCheck(pusher) =>
-//            unSuccessedContexts(command.getNewId.name) match {
-//              case s if s.size == 1 => Some(s"""Required status check "${s.toSeq(0)}" is expected""")
-//              case s if s.size >= 1 => Some(s"${s.size} of ${contexts.size} required status checks are expected")
-//              case _ => None
-//            }
-//          case ReceiveCommand.Type.DELETE =>
-//            Some("Cannot delete a protected branch")
-//          case _ => None
-//        }
-//      }else{
-//        None
-//      }
-//    }
-//    def unSuccessedContexts(sha1: String)(implicit session: Session): Set[String] = if(contexts.isEmpty){
-//      Set.empty
-//    } else {
-//      contexts.toSet -- getCommitStatues(owner, repository, sha1).filter(_.state == CommitState.SUCCESS).map(_.context).toSet
-//    }
-//    def needStatusCheck(pusher: String)(implicit session: Session): Boolean = pusher match {
-//      case _ if !enabled              => false
-//      case _ if contexts.isEmpty      => false
-//      case _ if includeAdministrators => true
-//      case p if isAdministrator(p)    => false
-//      case _                          => true
-//    }
-//  }
-//  object ProtectedBranchInfo{
-//    def disabled(owner: String, repository: String): ProtectedBranchInfo = ProtectedBranchInfo(owner, repository, false, Nil, false)
-//  }
-//}
+
+    /**
+     * Can't be force pushed
+     * Can't be deleted
+     * Can't have changes merged into them until required status checks pass
+     */
+    def getStopReason(isAllowNonFastForwards: Boolean, command: ReceiveCommand, pusher: String)(implicit session: Session): Option[String] = {
+      if(enabled){
+        command.getType() match {
+          case ReceiveCommand.Type.UPDATE|ReceiveCommand.Type.UPDATE_NONFASTFORWARD if isAllowNonFastForwards =>
+            Some("Cannot force-push to a protected branch")
+          case ReceiveCommand.Type.UPDATE|ReceiveCommand.Type.UPDATE_NONFASTFORWARD if needStatusCheck(pusher) =>
+            unSuccessedContexts(command.getNewId.name) match {
+              case s if s.size == 1 => Some(s"""Required status check "${s.toSeq(0)}" is expected""")
+              case s if s.size >= 1 => Some(s"${s.size} of ${contexts.size} required status checks are expected")
+              case _ => None
+            }
+          case ReceiveCommand.Type.DELETE =>
+            Some("Cannot delete a protected branch")
+          case _ => None
+        }
+      }else{
+        None
+      }
+    }
+
+    def unSuccessedContexts(sha1: String)(implicit session: Session): Set[String] = if(contexts.isEmpty){
+      Set.empty
+    } else {
+      contexts.toSet // TODO -- getCommitStatues(owner, repository, sha1).filter(_.state == CommitState.SUCCESS).map(_.context).toSet
+    }
+
+    def needStatusCheck(pusher: String)(implicit session: Session): Boolean = pusher match {
+      case _ if !enabled              => false
+      case _ if contexts.isEmpty      => false
+      case _ if includeAdministrators => true
+      case p if isAdministrator(p)    => false
+      case _                          => true
+    }
+  }
+
+  object ProtectedBranchInfo{
+    def disabled(owner: String, repository: String): ProtectedBranchInfo = ProtectedBranchInfo(owner, repository, false, Nil, false)
+  }
+
+}

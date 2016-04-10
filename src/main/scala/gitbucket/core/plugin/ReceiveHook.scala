@@ -1,15 +1,16 @@
 package gitbucket.core.plugin
 
-import gitbucket.core.model.Profile._
 import org.eclipse.jgit.transport.{ReceivePack, ReceiveCommand}
-import profile.simple._
+
+import scala.concurrent.ExecutionContext
+import slick.jdbc.JdbcBackend._
 
 trait ReceiveHook {
 
   def preReceive(owner: String, repository: String, receivePack: ReceivePack, command: ReceiveCommand, pusher: String)
-                (implicit session: Session): Option[String] = None
+                (implicit ec: ExecutionContext, db: Database): Option[String] = None
 
   def postReceive(owner: String, repository: String, receivePack: ReceivePack, command: ReceiveCommand, pusher: String)
-                 (implicit session: Session): Unit = ()
+                 (implicit ec: ExecutionContext, db: Database): Unit = ()
 
 }
