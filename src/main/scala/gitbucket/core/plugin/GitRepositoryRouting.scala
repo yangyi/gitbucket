@@ -1,7 +1,7 @@
 package gitbucket.core.plugin
 
-import gitbucket.core.model.Session
 import gitbucket.core.service.SystemSettingsService.SystemSettings
+import slick.jdbc.JdbcBackend._
 
 /**
  * Define the Git repository routing.
@@ -15,7 +15,7 @@ case class GitRepositoryRouting(urlPattern: String, localPath: String, filter: G
   def this(urlPattern: String, localPath: String) = {
     this(urlPattern, localPath, new GitRepositoryFilter(){
       def filter(repositoryName: String, userName: Option[String], settings: SystemSettings, isUpdating: Boolean)
-                (implicit session: Session): Boolean = true
+                (implicit db: Database): Boolean = true
     })
   }
 
@@ -33,10 +33,10 @@ trait GitRepositoryFilter {
    * @param userName the authenticated user name or None
    * @param settings the system settings
    * @param isUpdating true if update request, otherwise false
-   * @param session the database session
+   * @param db the database object
    * @return true if allow accessing to repository, otherwise false.
    */
   def filter(path: String, userName: Option[String], settings: SystemSettings, isUpdating: Boolean)
-            (implicit session: Session): Boolean
+            (implicit db: Database): Boolean
 
 }

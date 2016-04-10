@@ -1,9 +1,12 @@
 package gitbucket.core.ssh
 
-import gitbucket.core.model.Session
 import gitbucket.core.plugin.{GitRepositoryRouting, PluginRegistry}
 import gitbucket.core.service.{RepositoryService, AccountService, SystemSettingsService}
-import gitbucket.core.servlet.{Database, CommitLogHook}
+
+import scala.concurrent._
+import scala.concurrent.duration.Duration
+
+import gitbucket.core.servlet.CommitLogHook
 import gitbucket.core.util.{Directory, ControlUtil}
 import org.apache.sshd.server.{CommandFactory, Environment, ExitCallback, Command}
 import org.slf4j.LoggerFactory
@@ -14,6 +17,9 @@ import Directory._
 import org.eclipse.jgit.transport.{ReceivePack, UploadPack}
 import org.apache.sshd.server.command.UnknownCommand
 import org.eclipse.jgit.errors.RepositoryNotFoundException
+//import gitbucket.core.model.Profile._, profile.api._
+import slick.dbio._
+import slick.jdbc.JdbcBackend._
 
 object GitCommand {
   val DefaultCommandRegex = """\Agit-(upload|receive)-pack '/([a-zA-Z0-9\-_.]+)/([a-zA-Z0-9\-_.]+).git'\Z""".r
@@ -28,23 +34,23 @@ abstract class GitCommand() extends Command {
   @volatile protected var out: OutputStream = null
   @volatile protected var callback: ExitCallback = null
 
-  protected def runTask(user: String)(implicit session: Session): Unit
+  protected def runTask(user: String)(implicit ec: ExecutionContext, db: Database): Unit
 
   private def newTask(user: String): Runnable = new Runnable {
     override def run(): Unit = {
-      Database() withSession { implicit session =>
-        try {
-          runTask(user)
-          callback.onExit(0)
-        } catch {
-          case e: RepositoryNotFoundException =>
-            logger.info(e.getMessage)
-            callback.onExit(1, "Repository Not Found")
-          case e: Throwable =>
-            logger.error(e.getMessage, e)
-            callback.onExit(1)
-        }
-      }
+//      Database() withSession { implicit session =>
+//        try {
+//          runTask(user)
+//          callback.onExit(0)
+//        } catch {
+//          case e: RepositoryNotFoundException =>
+//            logger.info(e.getMessage)
+//            callback.onExit(1, "Repository Not Found")
+//          case e: Throwable =>
+//            logger.error(e.getMessage, e)
+//            callback.onExit(1)
+//        }
+//      }
     }
   }
 
@@ -77,11 +83,11 @@ abstract class GitCommand() extends Command {
 abstract class DefaultGitCommand(val owner: String, val repoName: String) extends GitCommand {
   self: RepositoryService with AccountService =>
 
-  protected def isWritableUser(username: String, repositoryInfo: RepositoryService.RepositoryInfo)
-                              (implicit session: Session): Boolean =
-    getAccountByUserName(username) match {
+  protected def isWritableUser(userName: String, repositoryInfo: RepositoryService.RepositoryInfo)
+                              (implicit ec: ExecutionContext): DBIO[Boolean] =
+    getAccountByUserName(userName).flatMap {
       case Some(account) => hasWritePermission(repositoryInfo.owner, repositoryInfo.name, Some(account))
-      case None => false
+      case None => DBIO.successful(false)
     }
 
 }
@@ -90,25 +96,46 @@ abstract class DefaultGitCommand(val owner: String, val repoName: String) extend
 class DefaultGitUploadPack(owner: String, repoName: String, baseUrl: String) extends DefaultGitCommand(owner, repoName)
     with RepositoryService with AccountService {
 
-  override protected def runTask(user: String)(implicit session: Session): Unit = {
-    getRepository(owner, repoName.replaceFirst("\\.wiki\\Z", ""), baseUrl).foreach { repositoryInfo =>
-      if(!repositoryInfo.repository.isPrivate || isWritableUser(user, repositoryInfo)){
+  override protected def runTask(user: String)(implicit ec: ExecutionContext, db: Database): Unit = {
+    val action = getRepository(owner, repoName.replaceFirst("\\.wiki\\Z", ""), baseUrl).flatMap {
+      _.map { repositoryInfo =>
+        if(!repositoryInfo.repository.isPrivate){
+          DBIO.successful(Some(repositoryInfo, true))
+        } else {
+          isWritableUser(user, repositoryInfo).map { isWritable =>
+            Some(repositoryInfo, isWritable)
+          }
+        }
+      } getOrElse DBIO.successful(None)
+    }
+
+    Await.result(db.run(action), Duration.Inf) match {
+      case Some((repositoryInfo, isWritable)) =>
         using(Git.open(getRepositoryDir(owner, repoName))) { git =>
           val repository = git.getRepository
           val upload = new UploadPack(repository)
           upload.upload(in, out, err)
         }
-      }
+      case _ => ()
     }
   }
+
 }
 
 class DefaultGitReceivePack(owner: String, repoName: String, baseUrl: String) extends DefaultGitCommand(owner, repoName)
     with RepositoryService with AccountService {
 
-  override protected def runTask(user: String)(implicit session: Session): Unit = {
-    getRepository(owner, repoName.replaceFirst("\\.wiki\\Z", ""), baseUrl).foreach { repositoryInfo =>
-      if(isWritableUser(user, repositoryInfo)){
+  override protected def runTask(user: String)(implicit ec: ExecutionContext, db: Database): Unit = {
+    val action = getRepository(owner, repoName.replaceFirst("\\.wiki\\Z", ""), baseUrl).flatMap {
+      _.map { repositoryInfo =>
+        isWritableUser(user, repositoryInfo).map { isWritable =>
+          Some(repositoryInfo, isWritable)
+        }
+      } getOrElse DBIO.successful(None)
+    }
+
+    Await.result(db.run(action), Duration.Inf) match {
+      case Some((repositoryInfo, isWritable)) =>
         using(Git.open(getRepositoryDir(owner, repoName))) { git =>
           val repository = git.getRepository
           val receive = new ReceivePack(repository)
@@ -119,7 +146,7 @@ class DefaultGitReceivePack(owner: String, repoName: String, baseUrl: String) ex
           }
           receive.receive(in, out, err)
         }
-      }
+      case _ => ()
     }
   }
 }
@@ -127,7 +154,7 @@ class DefaultGitReceivePack(owner: String, repoName: String, baseUrl: String) ex
 class PluginGitUploadPack(repoName: String, baseUrl: String, routing: GitRepositoryRouting) extends GitCommand
     with SystemSettingsService {
 
-  override protected def runTask(user: String)(implicit session: Session): Unit = {
+  override protected def runTask(user: String)(implicit ec: ExecutionContext, db: Database): Unit = {
     if(routing.filter.filter("/" + repoName, Some(user), loadSystemSettings(), false)){
       val path = routing.urlPattern.r.replaceFirstIn(repoName, routing.localPath)
       using(Git.open(new File(Directory.GitBucketHome, path))){ git =>
@@ -142,7 +169,7 @@ class PluginGitUploadPack(repoName: String, baseUrl: String, routing: GitReposit
 class PluginGitReceivePack(repoName: String, baseUrl: String, routing: GitRepositoryRouting) extends GitCommand
     with SystemSettingsService {
 
-  override protected def runTask(user: String)(implicit session: Session): Unit = {
+  override protected def runTask(user: String)(implicit ec: ExecutionContext, db: Database): Unit = {
     if(routing.filter.filter("/" + repoName, Some(user), loadSystemSettings(), true)){
       val path = routing.urlPattern.r.replaceFirstIn(repoName, routing.localPath)
       using(Git.open(new File(Directory.GitBucketHome, path))){ git =>
