@@ -556,7 +556,7 @@ object JGitUtil {
 
     val diffs = git.diff.setNewTree(newTreeIter).setOldTree(oldTreeIter).call.asScala
     diffs.map { diff =>
-      if(diffs.size > 100){
+      if(diffs.size > 10){
         DiffInfo(
           changeType  = diff.getChangeType,
           oldPath     = diff.getOldPath,
